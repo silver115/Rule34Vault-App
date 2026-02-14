@@ -1,0 +1,226 @@
+import React, { useState } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Pressable,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
+  Alert,
+} from "react-native";
+import { useRouter } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import { useAuth } from "../contexts/AuthContext";
+import { Colors, Radius, Spacing, FontSize } from "../constants/theme";
+import { useAppTheme } from "../contexts/ThemeContext";
+
+export default function LoginScreen() {
+  const router = useRouter();
+  const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleLogin() {
+    if (!email.trim() || !password.trim()) {
+      setError("Please enter both email and password");
+      return;
+    }
+    setIsLoading(true);
+    setError(null);
+    try {
+      await login(email.trim(), password);
+      router.back();
+    } catch (e: any) {
+      setError(e.message || "Login failed. Check your credentials.");
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  const { colors } = useAppTheme();
+
+  return (
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: colors.bg }]}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <View style={styles.inner}>
+        <View style={styles.header}>
+          <Ionicons name="shield-checkmark" size={48} color={colors.accent} />
+          <Text style={[styles.title, { color: colors.text }]}>Rule34Vault</Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Sign in to your account</Text>
+        </View>
+
+        {error && (
+          <View style={styles.errorBox}>
+            <Ionicons name="alert-circle" size={16} color={colors.danger} />
+            <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+          </View>
+        )}
+
+        <View style={styles.form}>
+          <View style={[styles.inputWrap, { backgroundColor: colors.bgTertiary, borderColor: colors.border }]}>
+            <Ionicons
+              name="mail-outline"
+              size={18}
+              color={colors.textMuted}
+              style={styles.inputIcon}
+            />
+            <TextInput
+              style={[styles.input, { color: colors.text }]}
+              placeholder="Email"
+              placeholderTextColor={colors.textMuted}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isLoading}
+            />
+          </View>
+
+          <View style={[styles.inputWrap, { backgroundColor: colors.bgTertiary, borderColor: colors.border }]}>
+            <Ionicons
+              name="lock-closed-outline"
+              size={18}
+              color={colors.textMuted}
+              style={styles.inputIcon}
+            />
+            <TextInput
+              style={[styles.input, { color: colors.text, flex: 1 }]}
+              placeholder="Password"
+              placeholderTextColor={colors.textMuted}
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!isLoading}
+            />
+            <Pressable
+              onPress={() => setShowPassword(!showPassword)}
+              style={styles.eyeBtn}
+            >
+              <Ionicons
+                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                size={18}
+                color={colors.textMuted}
+              />
+            </Pressable>
+          </View>
+
+          <Pressable
+            style={[styles.loginBtn, { backgroundColor: colors.accent }, isLoading && styles.loginBtnDisabled]}
+            onPress={handleLogin}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.loginBtnText}>Sign In</Text>
+            )}
+          </Pressable>
+        </View>
+
+        <Text style={[styles.disclaimer, { color: colors.textMuted }]}>
+          Your credentials are stored securely on-device only.
+        </Text>
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: Colors.bg,
+  },
+  inner: {
+    flex: 1,
+    justifyContent: "center",
+    paddingHorizontal: Spacing.xl,
+  },
+  header: {
+    alignItems: "center",
+    marginBottom: Spacing.xxl,
+    gap: Spacing.sm,
+  },
+  title: {
+    fontSize: FontSize.xxl,
+    fontWeight: "800",
+    color: Colors.text,
+    marginTop: Spacing.sm,
+  },
+  subtitle: {
+    fontSize: FontSize.md,
+    color: Colors.textSecondary,
+  },
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    backgroundColor: "rgba(255,71,87,0.1)",
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+    borderColor: "rgba(255,71,87,0.3)",
+  },
+  errorText: {
+    color: Colors.danger,
+    fontSize: FontSize.sm,
+    flex: 1,
+  },
+  form: {
+    gap: Spacing.md,
+  },
+  inputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.bgTertiary,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    height: 52,
+  },
+  inputIcon: {
+    marginRight: Spacing.sm,
+  },
+  input: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: FontSize.md,
+    height: "100%",
+  },
+  eyeBtn: {
+    padding: Spacing.xs,
+  },
+  loginBtn: {
+    backgroundColor: Colors.accent,
+    borderRadius: Radius.md,
+    height: 52,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: Spacing.sm,
+  },
+  loginBtnDisabled: {
+    opacity: 0.6,
+  },
+  loginBtnText: {
+    color: "#fff",
+    fontSize: FontSize.lg,
+    fontWeight: "700",
+  },
+  disclaimer: {
+    color: Colors.textMuted,
+    fontSize: FontSize.xs,
+    textAlign: "center",
+    marginTop: Spacing.xl,
+  },
+});

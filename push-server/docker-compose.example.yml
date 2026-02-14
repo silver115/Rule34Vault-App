@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  push-server:
+    image: node:20-alpine
+    container_name: r34vault-push-server
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "4829:4829"
+    environment:
+      - PORT=4829
+      - POLL_INTERVAL=300000
+      - ENCRYPTION_KEY=your-64-char-hex-encryption-key-here
+      - API_SECRET=your-api-secret-here
+    volumes:
+      - ./push-server-app:/app
+      - push-data:/app/data
+    command: sh -c "npm install --production && node server.js"
+    networks:
+      - push-net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: r34vault-cloudflared
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=your-cloudflare-tunnel-token-here
+    networks:
+      - push-net
+    depends_on:
+      - push-server
+
+volumes:
+  push-data:
+    driver: local
+
+networks:
+  push-net:
+    driver: bridge
