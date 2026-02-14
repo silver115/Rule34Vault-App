@@ -21,39 +21,13 @@ A modern Android app for browsing Rule34Vault, built with React Native + Expo. I
 
 ## Getting Started
 
-### Prerequisites
+### Prerequisites used
 
 - Node.js 18+
 - npm or yarn
 - Expo CLI (`npx expo`)
 - Android Studio (for emulator) or Expo Go app on your phone
 
-### Install & Run
-
-```bash
-cd rule34vault-app
-npm install
-
-# Web preview (for UI testing — API calls may be blocked by CORS)
-npx expo start --web
-
-# Android (via Expo Go or emulator)
-npx expo start
-# Then press 'a' for Android
-```
-
-### Build APK
-
-```bash
-# Install EAS CLI
-npm install -g eas-cli
-
-# Configure build
-eas build:configure
-
-# Build Android APK
-eas build --platform android --profile preview
-```
 
 ## Project Structure
 
