@@ -2,49 +2,6 @@
 
 Sends push notifications to app users when new posts appear in their subscribed feed.
 
-## Setup on TrueNAS Scale
-
-### 1. Generate secrets
-
-Run these on any machine to generate your secrets:
-
-```bash
-# Generate a 64-char hex encryption key
-openssl rand -hex 32
-
-# Generate an API secret
-openssl rand -base64 32
-```
-
-### 2. Edit docker-compose.yml
-
-Replace the placeholder values:
-
-- `ENCRYPTION_KEY` → your 64-char hex key from step 1
-- `API_SECRET` → your random API secret from step 1
-- `TUNNEL_TOKEN` → your Cloudflare tunnel token
-
-### 3. Deploy on TrueNAS Scale
-
-Copy the `push-server` folder to your TrueNAS, then:
-
-```bash
-cd push-server
-docker-compose up -d
-```
-
-Or use the TrueNAS Apps UI to create a custom Docker app.
-
-### 4. Verify
-
-```bash
-# Check health
-curl https://push.lucario.click/api/health
-
-# Should return:
-# {"status":"ok","activeUsers":0}
-```
-
 ## How it works
 
 1. Users enable push notifications in the app
