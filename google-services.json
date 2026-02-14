@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "446537720733",
+    "project_id": "rule34vault",
+    "storage_bucket": "rule34vault.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:446537720733:android:ccf54844c42f8f0b8ac574",
+        "android_client_info": {
+          "package_name": "com.puro115.rule34vaultapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD-pShgFCxf5g3bJrygssKno1U-dNgAh0c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

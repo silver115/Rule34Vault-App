@@ -23,7 +23,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.yourname.rule34vaultapp",
+      "package": "com.puro115.rule34vaultapp",
       "googleServicesFile": "./google-services.json"
     },
     "web": {
@@ -47,9 +47,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "YOUR_EAS_PROJECT_ID"
+        "projectId": "5828ad87-fb90-40c2-9ee1-e520b39d8a10"
       }
     },
-    "owner": "YOUR_EXPO_USERNAME"
+    "owner": "puro115"
   }
 }

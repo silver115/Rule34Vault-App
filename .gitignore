@@ -34,8 +34,7 @@ yarn-error.*
 .env
 .env*.local
 
-# Firebase / Google Services (contains API keys)
-google-services.json
+# Firebase / Google Services (iOS — if you add it later)
 GoogleService-Info.plist
 
 # Push server secrets
