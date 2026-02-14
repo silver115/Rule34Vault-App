@@ -282,15 +282,18 @@ async function sendPush(fcmToken, title, body) {
         body: body,
       },
       android: {
+        collapseKey: "feed_updates",
         priority: "high",
         notification: {
           channelId: "feed",
           sound: "default",
           priority: "high",
+          tag: "feed_updates",
         },
       },
       data: {
         screen: "feed",
+        notificationId: "feed_updates",
       },
     };
     const response = await admin.messaging().send(message);

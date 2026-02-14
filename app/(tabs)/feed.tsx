@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,7 +8,8 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
+import * as Notifications from "expo-notifications";
 import api, { Post, Tag } from "../../api/rule34vault";
 import { PostGrid } from "../../components/PostGrid";
 import { useAuth } from "../../contexts/AuthContext";
@@ -20,6 +21,14 @@ export default function FeedScreen() {
   const { user, isLoggedIn, isLoading: authLoading } = useAuth();
   const { setCount: setFeedCount } = useFeedCount();
   const router = useRouter();
+
+  // Dismiss all notifications when user visits the Feed tab
+  useFocusEffect(
+    useCallback(() => {
+      Notifications.dismissAllNotificationsAsync();
+      Notifications.setBadgeCountAsync(0);
+    }, [])
+  );
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [subscribedTags, setSubscribedTags] = useState<Tag[]>([]);
