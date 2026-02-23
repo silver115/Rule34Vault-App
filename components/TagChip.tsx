@@ -1,7 +1,8 @@
-import React from "react";
-import { Pressable, Text, StyleSheet } from "react-native";
+import React, { useState, useCallback } from "react";
+import { Pressable, Text, StyleSheet, Alert, Platform } from "react-native";
 import { useRouter } from "expo-router";
-import { Tag } from "../api/rule34vault";
+import api, { Tag } from "../api/rule34vault";
+import { useAuth } from "../contexts/AuthContext";
 import { Colors, Radius, Spacing, FontSize, getTagColor } from "../constants/theme";
 
 interface TagChipProps {
@@ -12,7 +13,9 @@ interface TagChipProps {
 
 export function TagChip({ tag, onPress, compact }: TagChipProps) {
   const router = useRouter();
+  const { isLoggedIn } = useAuth();
   const color = getTagColor(tag.type);
+  const [subState, setSubState] = useState<"subscribed" | "unsubscribed" | null>(null);
 
   function handlePress() {
     if (onPress) {
@@ -22,13 +25,78 @@ export function TagChip({ tag, onPress, compact }: TagChipProps) {
     }
   }
 
+  const handleLongPress = useCallback(async () => {
+    if (!isLoggedIn) return;
+
+    try {
+      // Check current subscription status
+      const subs = await api.getActiveTagSubscriptions();
+      const isSubscribed = subs.some((t) => t.id === tag.id);
+
+      const action = isSubscribed ? "Unsubscribe from" : "Subscribe to";
+      const tagLabel = `#${tag.value}`;
+
+      if (Platform.OS === "web") {
+        const confirmed = window.confirm(`${action} ${tagLabel}?`);
+        if (!confirmed) return;
+        if (isSubscribed) {
+          await api.unsubscribeFromTag(tag.id);
+          setSubState("unsubscribed");
+        } else {
+          await api.subscribeToTag(tag.id);
+          setSubState("subscribed");
+        }
+      } else {
+        Alert.alert(
+          `${action} ${tagLabel}?`,
+          isSubscribed
+            ? "You will stop receiving feed updates for this tag."
+            : "You will receive feed updates when new posts are added with this tag.",
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: isSubscribed ? "Unsubscribe" : "Subscribe",
+              style: isSubscribed ? "destructive" : "default",
+              onPress: async () => {
+                try {
+                  if (isSubscribed) {
+                    await api.unsubscribeFromTag(tag.id);
+                    setSubState("unsubscribed");
+                  } else {
+                    await api.subscribeToTag(tag.id);
+                    setSubState("subscribed");
+                  }
+                } catch {
+                  Alert.alert("Error", "Failed to update subscription. Try again.");
+                }
+              },
+            },
+          ]
+        );
+      }
+    } catch {
+      if (Platform.OS === "web") {
+        window.alert("Failed to check subscription status.");
+      } else {
+        Alert.alert("Error", "Failed to check subscription status.");
+      }
+    }
+  }, [tag, isLoggedIn]);
+
+  const isHighlighted = subState === "subscribed";
+  const isUnsubbed = subState === "unsubscribed";
+
   return (
     <Pressable
       onPress={handlePress}
+      onLongPress={isLoggedIn ? handleLongPress : undefined}
+      delayLongPress={400}
       style={[
         styles.chip,
         { borderColor: color },
         compact && styles.compact,
+        isHighlighted && { backgroundColor: color + "30", borderColor: color },
+        isUnsubbed && { opacity: 0.6 },
       ]}
     >
       <Text style={[styles.text, { color }, compact && styles.compactText]}>

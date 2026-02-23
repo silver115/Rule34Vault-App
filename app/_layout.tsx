@@ -6,6 +6,7 @@ import { PostListProvider } from "../contexts/PostListContext";
 import { PlaylistProvider } from "../contexts/PlaylistContext";
 import { FeedCountProvider } from "../contexts/FeedCountContext";
 import { AppThemeProvider, useAppTheme } from "../contexts/ThemeContext";
+import { SettingsProvider } from "../contexts/SettingsContext";
 import { Colors } from "../constants/theme";
 
 export { ErrorBoundary } from "expo-router";
@@ -67,6 +68,7 @@ function ThemedApp() {
 export default function RootLayout() {
   return (
     <AppThemeProvider>
+    <SettingsProvider>
     <AuthProvider>
       <FeedCountProvider>
       <PlaylistProvider>
@@ -76,6 +78,7 @@ export default function RootLayout() {
       </PlaylistProvider>
       </FeedCountProvider>
     </AuthProvider>
+    </SettingsProvider>
     </AppThemeProvider>
   );
 }

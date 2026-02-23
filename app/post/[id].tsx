@@ -27,6 +27,7 @@ import api, {
 import { TagChip } from "../../components/TagChip";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePostList } from "../../contexts/PostListContext";
+import { useSettings } from "../../contexts/SettingsContext";
 import { Colors, Radius, Spacing, FontSize, getTagColor } from "../../constants/theme";
 
 const PREFETCH_COUNT = 5;
@@ -65,25 +66,24 @@ export default function PostDetailScreen() {
   const toggleMute = useCallback(() => setIsMuted((m) => !m), []);
 
   // Prefetch next N posts' media when active post changes
+  const { qualityOption } = useSettings();
   useEffect(() => {
     const currentIdx = postIds.indexOf(activePostId);
     if (currentIdx < 0) return;
     const upcoming = postIds.slice(currentIdx + 1, currentIdx + 1 + PREFETCH_COUNT);
     upcoming.forEach((pid) => {
-      // Prefetch post data into cache
       api.getPost(pid).then((post) => {
-        // Prefetch thumb + full image
-        const thumbUrl = getMediaUrl(post, "thumb");
-        const fullUrl = getMediaUrl(post, "full");
         if (Platform.OS !== "web") {
-          Image.prefetch(thumbUrl).catch(() => {});
-          if (post.type === 0) {
-            Image.prefetch(fullUrl).catch(() => {});
+          // Always prefetch thumbnail
+          Image.prefetch(getMediaUrl(post, "thumb")).catch(() => {});
+          // Only prefetch full image if quality setting requires it and it's an image
+          if (qualityOption.detailVariant === "full" && post.type === 0) {
+            Image.prefetch(getMediaUrl(post, "full")).catch(() => {});
           }
         }
       }).catch(() => {});
     });
-  }, [activePostId, postIds]);
+  }, [activePostId, postIds, qualityOption]);
 
   // Usable media height: full screen minus top+bottom safe area
   const mediaH = SCREEN_H - insets.top - insets.bottom;
@@ -156,31 +156,86 @@ function PostPage({
   onToggleMute: () => void;
 }) {
   const { isLoggedIn } = useAuth();
+  const { qualityOption } = useSettings();
+  const router = useRouter();
   const [post, setPost] = useState<Post | null>(null);
   const [actionState, setActionState] = useState<PostActionState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [mediaError, setMediaError] = useState(false);
+  const [similarPosts, setSimilarPosts] = useState<Post[]>([]);
+  const [videoPlaying, setVideoPlaying] = useState(false);
   const videoRef = useRef<any>(null);
   const webVideoRef = useRef<HTMLVideoElement | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+
+  // Reset error state when post changes
+  useEffect(() => {
+    setMediaError(false);
+    setVideoPlaying(false);
+  }, [postId]);
 
   // Control play/pause and mute based on active state
   useEffect(() => {
-    if (Platform.OS === "web" && webVideoRef.current) {
-      const v = webVideoRef.current;
-      v.muted = isMuted;
-      if (isActive) {
-        v.play().catch(() => {});
-      } else {
-        v.pause();
+    try {
+      if (Platform.OS === "web" && webVideoRef.current) {
+        const v = webVideoRef.current;
+        v.muted = isMuted;
+        if (isActive && videoPlaying) {
+          v.play().catch(() => {});
+        } else {
+          v.pause();
+        }
       }
-    }
-    if (Platform.OS !== "web" && videoRef.current) {
-      if (isActive) {
-        videoRef.current.playAsync?.().catch?.(() => {});
-      } else {
-        videoRef.current.pauseAsync?.().catch?.(() => {});
+      if (Platform.OS !== "web" && videoRef.current) {
+        if (isActive && videoPlaying) {
+          videoRef.current.playAsync?.().catch?.(() => {});
+        } else {
+          videoRef.current.pauseAsync?.().catch?.(() => {});
+        }
       }
+    } catch (e) {
+      console.warn("[PostPage] Video control error:", e);
     }
-  }, [isActive, isMuted]);
+  }, [isActive, isMuted, videoPlaying]);
+
+  // Auto-play videos based on quality setting
+  useEffect(() => {
+    if (isActive && qualityOption.videoAutoplay) {
+      setVideoPlaying(true);
+    } else if (!isActive) {
+      setVideoPlaying(false);
+    }
+  }, [isActive, qualityOption.videoAutoplay]);
+
+  // Web: capture mouse wheel to scroll the nested ScrollView
+  useEffect(() => {
+    if (Platform.OS !== "web" || !scrollRef.current) return;
+    const node = (scrollRef.current as any)?.getScrollableNode?.() ||
+                 (scrollRef.current as any)?._nativeRef?.current;
+    if (!node) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      node.scrollTop += e.deltaY;
+    };
+    node.addEventListener("wheel", handler, { passive: false });
+    return () => node.removeEventListener("wheel", handler);
+  });
+
+  // Cleanup video on unmount
+  useEffect(() => {
+    return () => {
+      try {
+        if (Platform.OS !== "web" && videoRef.current) {
+          videoRef.current.unloadAsync?.().catch?.(() => {});
+        }
+        if (Platform.OS === "web" && webVideoRef.current) {
+          webVideoRef.current.pause();
+          webVideoRef.current.removeAttribute("src");
+          webVideoRef.current.load();
+        }
+      } catch {}
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,11 +250,23 @@ function PostPage({
             if (!cancelled) setActionState(state);
           } catch {}
         }
-      } catch {}
+      } catch (e) {
+        console.warn("[PostPage] Failed to load post:", postId, e);
+      }
       if (!cancelled) setIsLoading(false);
     })();
     return () => { cancelled = true; };
   }, [postId]);
+
+  // Fetch similar posts once post data is available
+  useEffect(() => {
+    if (!post) return;
+    let cancelled = false;
+    api.searchSimilarPosts(post, 5).then((similar) => {
+      if (!cancelled) setSimilarPosts(similar);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [post?.id]);
 
   async function toggleLike() {
     if (!actionState || !isLoggedIn) return;
@@ -240,8 +307,9 @@ function PostPage({
   const isVideo = post.type === 1;
   const displayH = isVideo ? mediaH : screenH;
 
-  const mediaUrl = getMediaUrl(post, "full");
+  const mediaUrl = getMediaUrl(post, qualityOption.detailVariant);
   const thumbUrl = getMediaUrl(post, "thumb");
+  const fullUrl = getMediaUrl(post, "full");
 
   const tagsByType: Record<string, Tag[]> = {};
   (post.tags ?? []).forEach((t) => {
@@ -254,6 +322,7 @@ function PostPage({
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={{ width: screenW }}
       showsVerticalScrollIndicator={false}
       bounces={false}
@@ -261,37 +330,79 @@ function PostPage({
     >
       {/* Full-screen media */}
       <View style={{ width: screenW, height: screenH, backgroundColor: "#000", paddingTop: isVideo ? topInset : 0 }}>
-        {isVideo ? (
-          Platform.OS === "web" ? (
-            <video
-              ref={(el: HTMLVideoElement | null) => { webVideoRef.current = el; }}
-              src={mediaUrl}
-              poster={thumbUrl}
-              controls
-              autoPlay={isActive}
-              loop
-              muted={isMuted}
-              playsInline
-              style={{
-                width: screenW,
-                height: displayH,
-                objectFit: "contain",
-                backgroundColor: "#000",
-              }}
-            />
+        {mediaError ? (
+          <View style={[styles.center, { height: displayH }]}>
+            <Ionicons name="alert-circle-outline" size={48} color="#666" />
+            <Text style={{ color: "#888", marginTop: 8, fontSize: 14 }}>Failed to load media</Text>
+            <Pressable
+              style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.1)" }}
+              onPress={() => { setMediaError(false); setVideoPlaying(false); }}
+            >
+              <Text style={{ color: "#aaa" }}>Retry</Text>
+            </Pressable>
+          </View>
+        ) : isVideo ? (
+          videoPlaying ? (
+            Platform.OS === "web" ? (
+              <video
+                ref={(el: HTMLVideoElement | null) => { webVideoRef.current = el; }}
+                src={fullUrl}
+                poster={thumbUrl}
+                controls
+                autoPlay={isActive}
+                loop
+                muted={isMuted}
+                playsInline
+                onError={() => setMediaError(true)}
+                style={{
+                  width: screenW,
+                  height: displayH,
+                  objectFit: "contain",
+                  backgroundColor: "#000",
+                }}
+              />
+            ) : (
+              <Video
+                ref={videoRef}
+                source={{ uri: fullUrl }}
+                posterSource={{ uri: thumbUrl }}
+                usePoster
+                style={{ width: screenW, height: displayH }}
+                resizeMode={ResizeMode.CONTAIN}
+                shouldPlay={isActive}
+                isLooping
+                useNativeControls
+                isMuted={isMuted}
+                onError={(e) => {
+                  console.warn("[PostPage] Video error:", e);
+                  setMediaError(true);
+                }}
+              />
+            )
           ) : (
-            <Video
-              ref={videoRef}
-              source={{ uri: mediaUrl }}
-              posterSource={{ uri: thumbUrl }}
-              usePoster
-              style={{ width: screenW, height: displayH }}
-              resizeMode={ResizeMode.CONTAIN}
-              shouldPlay={isActive}
-              isLooping
-              useNativeControls
-              isMuted={isMuted}
-            />
+            <Pressable
+              style={{ width: screenW, height: displayH, justifyContent: "center", alignItems: "center" }}
+              onPress={() => setVideoPlaying(true)}
+            >
+              {Platform.OS === "web" ? (
+                <img
+                  src={thumbUrl}
+                  style={{ width: screenW, height: displayH, objectFit: "contain", backgroundColor: "#000", display: "block" }}
+                  onError={() => setMediaError(true)}
+                />
+              ) : (
+                <Image
+                  source={{ uri: thumbUrl }}
+                  style={{ width: screenW, height: displayH }}
+                  contentFit="contain"
+                  cachePolicy="memory-disk"
+                  onError={() => setMediaError(true)}
+                />
+              )}
+              <View style={styles.playOverlay}>
+                <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.85)" />
+              </View>
+            </Pressable>
           )
         ) : Platform.OS === "web" ? (
           <img
@@ -303,6 +414,7 @@ function PostPage({
               backgroundColor: "#000",
               display: "block",
             }}
+            onError={() => setMediaError(true)}
           />
         ) : (
           <Image
@@ -312,14 +424,17 @@ function PostPage({
             transition={200}
             placeholder={thumbUrl}
             cachePolicy="memory-disk"
+            onError={() => setMediaError(true)}
           />
         )}
 
         {/* Scroll hint at bottom — positioned above video controls */}
-        <View style={[styles.scrollHint, isVideo && { bottom: 60 }]}>
-          <Ionicons name="chevron-up" size={20} color="rgba(255,255,255,0.6)" />
-          <Text style={styles.scrollHintText}>Swipe up for details</Text>
-        </View>
+        {!mediaError && (
+          <View style={[styles.scrollHint, isVideo && { bottom: 60 }]}>
+            <Ionicons name="chevron-up" size={20} color="rgba(255,255,255,0.6)" />
+            <Text style={styles.scrollHintText}>Swipe up for details</Text>
+          </View>
+        )}
       </View>
 
       {/* Details below the fold */}
@@ -342,7 +457,7 @@ function PostPage({
             icon="download-outline"
             color={Colors.textSecondary}
             label="Download"
-            onPress={() => Linking.openURL(mediaUrl)}
+            onPress={() => Linking.openURL(fullUrl)}
           />
           <ActionButton
             icon="share-outline"
@@ -413,6 +528,48 @@ function PostPage({
           })}
         </View>
 
+        {/* Suggested Posts */}
+        {similarPosts.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Suggested Posts</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.similarRow}
+            >
+              {similarPosts.map((sp) => (
+                <Pressable
+                  key={sp.id}
+                  style={styles.similarCard}
+                  onPress={() => router.push({ pathname: "/post/[id]", params: { id: String(sp.id) } })}
+                >
+                  <Image
+                    source={{ uri: getMediaUrl(sp, "thumb") }}
+                    style={styles.similarThumb}
+                    contentFit="cover"
+                    transition={200}
+                  />
+                  {sp.type === 1 && (
+                    <View style={styles.similarVideoBadge}>
+                      <Ionicons name="play-circle" size={16} color="#fff" />
+                    </View>
+                  )}
+                  <Text style={styles.similarLikes} numberOfLines={1}>
+                    <Ionicons name="heart" size={10} color={Colors.like} /> {sp.likes ?? 0}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable
+              style={styles.viewMoreBtn}
+              onPress={() => router.push({ pathname: "/similar-posts", params: { postId: String(post.id) } })}
+            >
+              <Text style={styles.viewMoreText}>View More</Text>
+              <Ionicons name="arrow-forward" size={16} color={Colors.accent} />
+            </Pressable>
+          </View>
+        )}
+
         <View style={{ height: 80 }} />
       </View>
     </ScrollView>
@@ -472,6 +629,16 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.5)",
     fontSize: 12,
     marginTop: 2,
+  },
+  playOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.3)",
   },
   detailsContainer: {
     backgroundColor: Colors.bg,
@@ -546,5 +713,50 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: Spacing.xs,
+  },
+  similarRow: {
+    gap: Spacing.sm,
+    paddingBottom: Spacing.sm,
+  },
+  similarCard: {
+    width: 120,
+    borderRadius: Radius.md,
+    overflow: "hidden",
+    backgroundColor: Colors.bgCard,
+  },
+  similarThumb: {
+    width: 120,
+    height: 160,
+    borderRadius: Radius.md,
+  },
+  similarVideoBadge: {
+    position: "absolute",
+    top: 6,
+    right: 6,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 10,
+    padding: 2,
+  },
+  similarLikes: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 4,
+    textAlign: "center",
+  },
+  viewMoreBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    marginTop: Spacing.xs,
+    backgroundColor: Colors.bgCard,
+    borderRadius: Radius.md,
+  },
+  viewMoreText: {
+    fontSize: FontSize.sm,
+    fontWeight: "600",
+    color: Colors.accent,
   },
 });

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  RefreshControl,
   Pressable,
   ActivityIndicator,
   Platform,
@@ -101,28 +102,36 @@ export default function OtherUserProfileScreen() {
   const [followedPlaylists, setFollowedPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
+  const loadProfile = useCallback(async (showLoader = true) => {
     if (!username) return;
-    setLoading(true);
-    setError(null);
-    api.getUserProfile(username)
-      .then((user) => {
-        setProfile(user);
-      })
-      .catch(() => setError("User not found"))
-      .finally(() => setLoading(false));
+    if (showLoader) { setLoading(true); setError(null); }
+    try {
+      const user = await api.getUserProfile(username);
+      setProfile(user);
+      const [pl, fpl] = await Promise.all([
+        api.getUserPlaylists(user.id, 50).catch(() => ({ items: [] })),
+        api.getFollowedPlaylists(user.id, 50).catch(() => ({ items: [] })),
+      ]);
+      setPlaylists(pl.items || []);
+      setFollowedPlaylists(fpl.items || []);
+    } catch {
+      setError("User not found");
+    } finally {
+      setLoading(false);
+    }
   }, [username]);
 
   useEffect(() => {
-    if (!profile) return;
-    api.getUserPlaylists(profile.id, 50)
-      .then((d) => setPlaylists(d.items || []))
-      .catch(() => {});
-    api.getFollowedPlaylists(profile.id, 50)
-      .then((d) => setFollowedPlaylists(d.items || []))
-      .catch(() => {});
-  }, [profile?.id]);
+    loadProfile(true);
+  }, [username]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadProfile(false);
+    setRefreshing(false);
+  }, [loadProfile]);
 
   if (loading) {
     return (
@@ -159,7 +168,19 @@ export default function OtherUserProfileScreen() {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.scroll}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.scroll}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={Colors.accent}
+          colors={[Colors.accent]}
+          progressBackgroundColor={Colors.bgSecondary}
+        />
+      }
+    >
       <Stack.Screen options={{ title: profile.displayName || username || "User" }} />
 
       {/* Banner */}

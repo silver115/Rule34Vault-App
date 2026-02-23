@@ -481,6 +481,26 @@ class Rule34VaultAPI {
     await this.post("/playlist/remove-item", { playlistId, postId });
   }
 
+  // ── Similar Posts ───────────────────────────────────────
+  async searchSimilarPosts(
+    post: Post,
+    take = 5
+  ): Promise<Post[]> {
+    const tags = post.tags ?? [];
+    // Prioritize artist > character > copyright > general tags
+    const prioritized = [
+      ...tags.filter((t) => t.type === 8),  // artist
+      ...tags.filter((t) => t.type === 4),  // character
+      ...tags.filter((t) => t.type === 2),  // copyright
+      ...tags.filter((t) => t.type === 1),  // general
+    ];
+    // Use top 3 tags for similarity search
+    const searchTags = prioritized.slice(0, 3).map((t) => t.value);
+    if (searchTags.length === 0) return [];
+    const data = await this.searchPosts(take + 5, null, { includeTags: searchTags });
+    return data.items.filter((p) => p.id !== post.id).slice(0, take);
+  }
+
   // ── Tags ──────────────────────────────────────────────
   async getTrendingTags(): Promise<Tag[]> {
     return this.get<Tag[]>("/tag");

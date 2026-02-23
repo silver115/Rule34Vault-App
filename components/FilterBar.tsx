@@ -23,22 +23,21 @@ const TYPE_OPTIONS = [
   { label: "Videos", value: 1, icon: "videocam" as const },
 ];
 
-const SCORE_OPTIONS = [
-  { label: "Any score", value: 0 },
-  { label: "10+ likes", value: 10 },
-  { label: "50+ likes", value: 50 },
-  { label: "100+ likes", value: 100 },
-  { label: "500+ likes", value: 500 },
+const HOT_RANGE_OPTIONS = [
+  { label: "All Time", value: 0, icon: "infinite" as const },
+  { label: "Daily", value: 1, icon: "today" as const },
+  { label: "Weekly", value: 7, icon: "calendar" as const },
+  { label: "Monthly", value: 30, icon: "calendar-outline" as const },
 ];
 
 export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarProps) {
-  const [scoreOpen, setScoreOpen] = useState(false);
+  const [rangeOpen, setRangeOpen] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [suggestions, setSuggestions] = useState<Tag[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const currentScore = filters.minScore ?? 0;
-  const scoreLabel = SCORE_OPTIONS.find((o) => o.value === currentScore)?.label ?? "Any score";
+  const currentRange = filters.postedFromDays ?? 0;
+  const rangeLabel = HOT_RANGE_OPTIONS.find((o) => o.value === currentRange)?.label ?? "All Time";
   const tags = useMemo(() => filters.includeTags ?? [], [filters.includeTags]);
 
   useEffect(() => {
@@ -110,42 +109,47 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
             );
           })}
 
-          {/* Score dropdown trigger */}
+          {/* Hot range dropdown trigger */}
           <Pressable
-            style={[styles.chip, currentScore > 0 && styles.chipActive]}
-            onPress={() => setScoreOpen(!scoreOpen)}
+            style={[styles.chip, currentRange > 0 && styles.chipActive]}
+            onPress={() => setRangeOpen(!rangeOpen)}
           >
             <Ionicons
               name="flame"
               size={14}
-              color={currentScore > 0 ? "#fff" : Colors.textSecondary}
+              color={currentRange > 0 ? "#fff" : Colors.textSecondary}
             />
-            <Text style={[styles.chipText, currentScore > 0 && styles.chipTextActive]}>
-              {scoreLabel}
+            <Text style={[styles.chipText, currentRange > 0 && styles.chipTextActive]}>
+              {rangeLabel}
             </Text>
             <Ionicons
-              name={scoreOpen ? "chevron-up" : "chevron-down"}
+              name={rangeOpen ? "chevron-up" : "chevron-down"}
               size={12}
-              color={currentScore > 0 ? "#fff" : Colors.textSecondary}
+              color={currentRange > 0 ? "#fff" : Colors.textSecondary}
             />
           </Pressable>
         </ScrollView>
       </View>
 
-      {/* Score dropdown panel */}
-      {scoreOpen && (
+      {/* Hot range dropdown panel */}
+      {rangeOpen && (
         <View style={styles.dropdown}>
-          {SCORE_OPTIONS.map((opt) => {
-            const active = currentScore === opt.value;
+          {HOT_RANGE_OPTIONS.map((opt) => {
+            const active = currentRange === opt.value;
             return (
               <Pressable
                 key={opt.value}
                 style={[styles.dropdownItem, active && styles.dropdownItemActive]}
                 onPress={() => {
-                  onFiltersChange({ ...filters, minScore: opt.value || undefined });
-                  setScoreOpen(false);
+                  onFiltersChange({
+                    ...filters,
+                    postedFromDays: opt.value || undefined,
+                    sortBy: opt.value > 0 ? 1 : filters.sortBy,
+                  });
+                  setRangeOpen(false);
                 }}
               >
+                <Ionicons name={opt.icon} size={16} color={active ? Colors.accent : Colors.textSecondary} />
                 <Text style={[styles.dropdownText, active && styles.dropdownTextActive]}>
                   {opt.label}
                 </Text>
@@ -279,7 +283,7 @@ const styles = StyleSheet.create({
   dropdownItem: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm + 2,
     borderBottomWidth: 1,
@@ -289,6 +293,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgTertiary,
   },
   dropdownText: {
+    flex: 1,
     fontSize: FontSize.sm,
     color: Colors.text,
   },

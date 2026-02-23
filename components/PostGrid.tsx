@@ -1,4 +1,4 @@
-import React, { useCallback } from "react";
+import React, { useCallback, useState, useEffect, useMemo } from "react";
 import {
   FlatList,
   View,
@@ -8,7 +8,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { Post } from "../api/rule34vault";
-import { PostCard, NUM_COLUMNS, GAP } from "./PostCard";
+import { PostCard, NUM_COLUMNS, GAP, isBrokenPost, onBrokenPostsChange } from "./PostCard";
 import { usePostList } from "../contexts/PostListContext";
 import { Colors, Spacing, FontSize } from "../constants/theme";
 
@@ -35,21 +35,32 @@ export function PostGrid({
 }: PostGridProps) {
   const { setPosts } = usePostList();
 
+  // Re-render when broken posts are detected so they get filtered out
+  const [, setBrokenTick] = useState(0);
+  useEffect(() => {
+    return onBrokenPostsChange(() => setBrokenTick((t) => t + 1));
+  }, []);
+
+  const filteredPosts = useMemo(
+    () => posts.filter((p) => !isBrokenPost(p.id)),
+    [posts, setBrokenTick]
+  );
+
   const renderItem = useCallback(
     ({ item, index }: { item: Post; index: number }) => (
       <PostCard
         post={item}
         index={index}
-        onPress={() => setPosts(posts)}
+        onPress={() => setPosts(filteredPosts)}
         badgeText={badgeMap?.get(item.id)}
       />
     ),
-    [posts, setPosts, badgeMap]
+    [filteredPosts, setPosts, badgeMap]
   );
 
   const keyExtractor = useCallback((item: Post) => String(item.id), []);
 
-  if (isLoading && posts.length === 0) {
+  if (isLoading && filteredPosts.length === 0) {
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={Colors.accent} />
@@ -59,7 +70,7 @@ export function PostGrid({
 
   return (
     <FlatList
-      data={posts}
+      data={filteredPosts}
       renderItem={renderItem}
       keyExtractor={keyExtractor}
       numColumns={NUM_COLUMNS}

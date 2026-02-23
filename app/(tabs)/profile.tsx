@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
   ScrollView,
+  RefreshControl,
   Alert,
   Platform,
   Linking,
@@ -42,13 +43,28 @@ export default function ProfileScreen() {
   const [blacklist, setBlacklist] = useState<{ tags: Tag[]; isActive: boolean } | null>(null);
   const [showBlacklist, setShowBlacklist] = useState(false);
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadProfileData = useCallback(async () => {
+    if (!isLoggedIn) return;
+    try {
+      const [bl] = await Promise.all([
+        api.getTagBlacklist().catch(() => null),
+        refreshPlaylists(),
+      ]);
+      if (bl) setBlacklist(bl);
+    } catch {}
+  }, [isLoggedIn, refreshPlaylists]);
 
   useEffect(() => {
-    if (isLoggedIn) {
-      api.getTagBlacklist().then(setBlacklist).catch(() => {});
-      refreshPlaylists();
-    }
+    loadProfileData();
   }, [isLoggedIn]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await loadProfileData();
+    setRefreshing(false);
+  }, [loadProfileData]);
 
   if (!isLoggedIn || !user) {
     return (
@@ -77,6 +93,15 @@ export default function ProfileScreen() {
       style={[styles.container, { backgroundColor: colors.bg }]}
       contentContainerStyle={styles.scroll}
       showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
+          tintColor={colors.accent}
+          colors={[colors.accent]}
+          progressBackgroundColor={colors.bgSecondary}
+        />
+      }
     >
       {/* Banner */}
       <View style={[styles.bannerWrap, { backgroundColor: colors.bgTertiary }]}>

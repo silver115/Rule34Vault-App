@@ -7,7 +7,10 @@ import {
   Platform,
   useWindowDimensions,
   ActivityIndicator,
+  Alert,
 } from "react-native";
+import { File as ExpoFile, Paths } from "expo-file-system";
+import * as MediaLibrary from "expo-media-library";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -16,19 +19,40 @@ import { useAuth } from "../contexts/AuthContext";
 import { usePlaylist } from "../contexts/PlaylistContext";
 import { Colors, Radius, Spacing, FontSize } from "../constants/theme";
 import { useAppTheme } from "../contexts/ThemeContext";
+import { useSettings } from "../contexts/SettingsContext";
 
 const NUM_COLUMNS = 2;
 const GAP = Spacing.sm;
 const FIXED_ASPECT = 3 / 4;
+
+// Track posts with broken/404 media so they can be hidden from grids
+const brokenPostIds = new Set<number>();
+let brokenListeners: (() => void)[] = [];
+
+export function isBrokenPost(id: number): boolean {
+  return brokenPostIds.has(id);
+}
+
+export function onBrokenPostsChange(listener: () => void) {
+  brokenListeners.push(listener);
+  return () => { brokenListeners = brokenListeners.filter((l) => l !== listener); };
+}
+
+function markBroken(id: number) {
+  if (brokenPostIds.has(id)) return;
+  brokenPostIds.add(id);
+  brokenListeners.forEach((l) => l());
+}
 
 interface PostCardProps {
   post: Post;
   index: number;
   onPress?: () => void;
   badgeText?: string;
+  onBroken?: (id: number) => void;
 }
 
-function Thumbnail({ uri, fallbackUri, width, height }: { uri: string; fallbackUri?: string; width: number; height: number }) {
+function Thumbnail({ uri, fallbackUri, width, height, onFinalError }: { uri: string; fallbackUri?: string; width: number; height: number; onFinalError?: () => void }) {
   const [currentUri, setCurrentUri] = React.useState(uri);
   const [errored, setErrored] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
@@ -48,6 +72,7 @@ function Thumbnail({ uri, fallbackUri, width, height }: { uri: string; fallbackU
     } else {
       setErrored(true);
       setLoading(false);
+      onFinalError?.();
     }
   };
 
@@ -102,17 +127,74 @@ function Thumbnail({ uri, fallbackUri, width, height }: { uri: string; fallbackU
   );
 }
 
-function PostCardInner({ post, index, onPress, badgeText }: PostCardProps) {
+function PostCardInner({ post, index, onPress, badgeText, onBroken }: PostCardProps) {
   const router = useRouter();
   const { isLoggedIn } = useAuth();
   const { colors } = useAppTheme();
+  const { qualityOption } = useSettings();
   const { playlists, activePlaylist, setActivePlaylist, addPostToActive, removePostFromActive } = usePlaylist();
   const { width: screenWidth } = useWindowDimensions();
   const cardWidth = Math.floor((screenWidth - GAP * (NUM_COLUMNS + 1)) / NUM_COLUMNS);
   const cardHeight = Math.floor(cardWidth / FIXED_ASPECT);
-  const thumbUrl = getMediaUrl(post, "thumb");
+  const thumbUrl = getMediaUrl(post, qualityOption.gridVariant);
   const thumbFallback = getMediaUrlDirect(post, "thumb");
+  const fullUrl = getMediaUrl(post, "full");
   const isVideo = post.type === 1;
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDownload = useCallback(async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const ext = isVideo ? "mp4" : "jpg";
+      const fileName = `${post.id}.${ext}`;
+
+      if (Platform.OS === "web") {
+        const resp = await fetch(fullUrl);
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== "granted") {
+          Alert.alert("Permission needed", "Storage permission is required to save files.");
+          setDownloading(false);
+          return;
+        }
+        // Download to cache using expo-file-system v19 API
+        const tempFile = new ExpoFile(Paths.cache, fileName);
+        const response = await fetch(fullUrl);
+        const blob = await response.blob();
+        const buffer = await blob.arrayBuffer();
+        tempFile.write(new Uint8Array(buffer));
+        // Save to media library under Rule34Vault album
+        const asset = await MediaLibrary.createAssetAsync(tempFile.uri);
+        let album = await MediaLibrary.getAlbumAsync("Rule34Vault");
+        if (album) {
+          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+        } else {
+          await MediaLibrary.createAlbumAsync("Rule34Vault", asset, false);
+        }
+        // Clean up temp file
+        try { tempFile.delete(); } catch {}
+        Alert.alert("Downloaded", `Saved to Rule34Vault/${fileName}`);
+      }
+    } catch (e: any) {
+      if (Platform.OS === "web") {
+        console.error("Download failed:", e);
+      } else {
+        Alert.alert("Download failed", e?.message || "An error occurred.");
+      }
+    } finally {
+      setDownloading(false);
+    }
+  }, [fullUrl, post.id, isVideo, downloading]);
 
   const [liked, setLiked] = useState(false);
   const [bookmarked, setBookmarked] = useState(false);
@@ -184,7 +266,13 @@ function PostCardInner({ post, index, onPress, badgeText }: PostCardProps) {
       }}
       style={[styles.card, { width: cardWidth, height: cardHeight, backgroundColor: colors.bgCard }]}
     >
-      <Thumbnail uri={thumbUrl} fallbackUri={thumbFallback} width={cardWidth} height={cardHeight} />
+      <Thumbnail
+        uri={thumbUrl}
+        fallbackUri={thumbFallback}
+        width={cardWidth}
+        height={cardHeight}
+        onFinalError={() => { markBroken(post.id); onBroken?.(post.id); }}
+      />
       {badgeText ? (
         <View style={styles.tagBadge}>
           <Text style={styles.tagBadgeText} numberOfLines={1}>{badgeText}</Text>
@@ -233,6 +321,13 @@ function PostCardInner({ post, index, onPress, badgeText }: PostCardProps) {
               />
             </Pressable>
           )}
+          <Pressable style={styles.quickBtn} onPress={handleDownload}>
+            {downloading ? (
+              <ActivityIndicator size={16} color="#fff" />
+            ) : (
+              <Ionicons name="download-outline" size={18} color="#fff" />
+            )}
+          </Pressable>
         </View>
       )}
       {/* Inline playlist picker */}

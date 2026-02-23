@@ -52,7 +52,7 @@ export default function BrowseScreen() {
       // sortBy enum: 0=id (recent), 1=likes (top rated), 2=views
       if (currentFeed === "hot") {
         feedFilters.sortBy = 1;
-        feedFilters.postedFromDays = 1;
+        if (!feedFilters.postedFromDays) feedFilters.postedFromDays = 7;
       }
       if (currentFeed === "highest") feedFilters.sortBy = 1;
 

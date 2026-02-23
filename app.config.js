@@ -23,9 +23,11 @@ if (fs.existsSync(envPath)) {
 const appJson = require("./app.json");
 const config = appJson.expo || appJson;
 
-// Inject app-runtime secrets into extra so code can read them via Constants.expoConfig.extra
+// Optionally override push server URL from .env (for local development)
 config.extra = config.extra || {};
-config.extra.pushServerUrl = env.PUSH_SERVER_URL || "";
+if (env.PUSH_SERVER_URL) {
+  config.extra.pushServerUrl = env.PUSH_SERVER_URL;
+}
 
 module.exports = ({ config: _cfg }) => {
   return {

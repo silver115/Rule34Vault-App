@@ -15,6 +15,7 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../contexts/AuthContext";
 import { Radius, Spacing, FontSize } from "../constants/theme";
 import { useAppTheme, THEMES, ThemeName } from "../contexts/ThemeContext";
+import { useSettings, QUALITY_OPTIONS, PreviewQuality } from "../contexts/SettingsContext";
 import {
   getNotificationPref,
   setNotificationPref,
@@ -24,14 +25,17 @@ import {
 } from "../utils/notifications";
 
 const THEME_KEYS = Object.keys(THEMES) as ThemeName[];
+const QUALITY_KEYS = Object.keys(QUALITY_OPTIONS) as PreviewQuality[];
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, token: authToken, isLoggedIn, logout } = useAuth();
   const { themeName, colors, setTheme } = useAppTheme();
+  const { previewQuality, qualityOption, setPreviewQuality } = useSettings();
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
+  const [qualityDropdownOpen, setQualityDropdownOpen] = useState(false);
 
   useEffect(() => {
     getNotificationPref().then(setPushEnabled).catch(() => {});
@@ -161,6 +165,92 @@ export default function SettingsScreen() {
                         {isActive ? "  ✓" : ""}
                       </Text>
                       <Text style={[styles.themeSub, { color: colors.textMuted }]}>{t.description}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Modal>
+
+        {/* Data & Quality Section */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Data & Quality</Text>
+        <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
+          <Pressable
+            style={[styles.row, { borderBottomColor: colors.border }]}
+            onPress={() => setQualityDropdownOpen(true)}
+          >
+            <Ionicons name="image-outline" size={20} color={colors.textSecondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>Preview Quality</Text>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+                {qualityOption.label} — {qualityOption.description}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </Pressable>
+        </View>
+
+        {/* Quality Picker Modal */}
+        <Modal
+          visible={qualityDropdownOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setQualityDropdownOpen(false)}
+        >
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setQualityDropdownOpen(false)}
+          >
+            <View style={[styles.modalContent, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Preview Quality</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
+                Lower quality uses less mobile data
+              </Text>
+              {QUALITY_KEYS.map((key) => {
+                const opt = QUALITY_OPTIONS[key];
+                const isActive = key === previewQuality;
+                return (
+                  <Pressable
+                    key={key}
+                    style={[
+                      styles.themeOption,
+                      { borderColor: colors.border },
+                      isActive && { borderColor: colors.accent, backgroundColor: colors.accent + "15" },
+                    ]}
+                    onPress={() => {
+                      setPreviewQuality(key);
+                      setQualityDropdownOpen(false);
+                    }}
+                  >
+                    <View style={styles.qualityIconWrap}>
+                      <Ionicons
+                        name={key === "low" ? "cellular-outline" : key === "medium" ? "cellular" : "wifi"}
+                        size={20}
+                        color={isActive ? colors.accent : colors.textSecondary}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.themeLabel, { color: colors.text }]}>
+                        {opt.label}
+                        {isActive ? "  ✓" : ""}
+                      </Text>
+                      <Text style={[styles.themeSub, { color: colors.textMuted }]}>{opt.description}</Text>
+                      {key === "low" && (
+                        <Text style={[styles.qualityDetail, { color: colors.textMuted }]}>
+                          Videos: tap to play • Images: thumbnails only
+                        </Text>
+                      )}
+                      {key === "medium" && (
+                        <Text style={[styles.qualityDetail, { color: colors.textMuted }]}>
+                          Videos: auto-play • Images: full in detail view
+                        </Text>
+                      )}
+                      {key === "high" && (
+                        <Text style={[styles.qualityDetail, { color: colors.textMuted }]}>
+                          Videos: auto-play • Images: full quality everywhere
+                        </Text>
+                      )}
                     </View>
                   </Pressable>
                 );
@@ -319,5 +409,21 @@ const styles = StyleSheet.create({
   themeSub: {
     fontSize: FontSize.xs,
     marginTop: 2,
+  },
+  modalSubtitle: {
+    fontSize: FontSize.sm,
+    marginBottom: Spacing.md,
+  },
+  qualityIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  qualityDetail: {
+    fontSize: 10,
+    marginTop: 3,
   },
 });
