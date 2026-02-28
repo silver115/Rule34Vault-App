@@ -15,7 +15,7 @@ jobs:
         node-version: '20'
         cache: 'npm'
     - run: npm ci
-    - run: npm install -g @expo/eas-cli
+    - run: npm install -g eas-cli
     - run: eas build --platform android --profile preview --non-interactive
       env:
         EXPO_PUBLIC_REC_SERVER_URL: ${{ secrets.REC_SERVER_URL }}
