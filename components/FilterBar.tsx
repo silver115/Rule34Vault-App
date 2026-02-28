@@ -24,6 +24,7 @@ const TYPE_OPTIONS = [
 ];
 
 const HOT_RANGE_OPTIONS = [
+  { label: "Default", value: -1, icon: "list" as const },
   { label: "All Time", value: 0, icon: "infinite" as const },
   { label: "Daily", value: 1, icon: "today" as const },
   { label: "Weekly", value: 7, icon: "calendar" as const },
@@ -36,8 +37,8 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
   const [suggestions, setSuggestions] = useState<Tag[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const currentRange = filters.postedFromDays ?? 0;
-  const rangeLabel = HOT_RANGE_OPTIONS.find((o) => o.value === currentRange)?.label ?? "All Time";
+  const currentRange = filters.postedFromDays != null ? filters.postedFromDays : -1;
+  const rangeLabel = HOT_RANGE_OPTIONS.find((o) => o.value === currentRange)?.label ?? "Hot";
   const tags = useMemo(() => filters.includeTags ?? [], [filters.includeTags]);
 
   useEffect(() => {
@@ -111,21 +112,21 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
 
           {/* Hot range dropdown trigger */}
           <Pressable
-            style={[styles.chip, currentRange > 0 && styles.chipActive]}
+            style={[styles.chip, currentRange >= 0 && styles.chipActive]}
             onPress={() => setRangeOpen(!rangeOpen)}
           >
             <Ionicons
               name="flame"
               size={14}
-              color={currentRange > 0 ? "#fff" : Colors.textSecondary}
+              color={currentRange >= 0 ? "#fff" : Colors.textSecondary}
             />
-            <Text style={[styles.chipText, currentRange > 0 && styles.chipTextActive]}>
+            <Text style={[styles.chipText, currentRange >= 0 && styles.chipTextActive]}>
               {rangeLabel}
             </Text>
             <Ionicons
               name={rangeOpen ? "chevron-up" : "chevron-down"}
               size={12}
-              color={currentRange > 0 ? "#fff" : Colors.textSecondary}
+              color={currentRange >= 0 ? "#fff" : Colors.textSecondary}
             />
           </Pressable>
         </ScrollView>
@@ -141,11 +142,17 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
                 key={opt.value}
                 style={[styles.dropdownItem, active && styles.dropdownItemActive]}
                 onPress={() => {
-                  onFiltersChange({
-                    ...filters,
-                    postedFromDays: opt.value || undefined,
-                    sortBy: opt.value > 0 ? 1 : filters.sortBy,
-                  });
+                  if (opt.value === -1) {
+                    // Default: clear hot range and reset sort
+                    const { postedFromDays, sortBy, ...rest } = filters;
+                    onFiltersChange(rest);
+                  } else {
+                    onFiltersChange({
+                      ...filters,
+                      postedFromDays: opt.value === 0 ? undefined : opt.value,
+                      sortBy: opt.value >= 0 ? 1 : filters.sortBy,
+                    });
+                  }
                   setRangeOpen(false);
                 }}
               >

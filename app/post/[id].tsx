@@ -29,6 +29,8 @@ import { useAuth } from "../../contexts/AuthContext";
 import { usePostList } from "../../contexts/PostListContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { Colors, Radius, Spacing, FontSize, getTagColor } from "../../constants/theme";
+import { downloadMedia } from "../../utils/download";
+import { sendRecSignal, sendViewDuration, hasRecServer } from "../../utils/recommendations";
 
 const PREFETCH_COUNT = 5;
 
@@ -155,7 +157,7 @@ function PostPage({
   isMuted: boolean;
   onToggleMute: () => void;
 }) {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, token } = useAuth();
   const { qualityOption } = useSettings();
   const router = useRouter();
   const [post, setPost] = useState<Post | null>(null);
@@ -167,6 +169,31 @@ function PostPage({
   const videoRef = useRef<any>(null);
   const webVideoRef = useRef<HTMLVideoElement | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+
+  // View duration tracking for rec server
+  const viewStartRef = useRef<number>(0);
+  const sentDurationRef = useRef(false);
+
+  useEffect(() => {
+    if (isActive) {
+      viewStartRef.current = Date.now();
+      sentDurationRef.current = false;
+    } else if (viewStartRef.current > 0 && !sentDurationRef.current && token && post) {
+      const durationSec = (Date.now() - viewStartRef.current) / 1000;
+      sentDurationRef.current = true;
+      sendViewDuration(token, postId, durationSec, post.tags);
+    }
+  }, [isActive]);
+
+  // Send view duration on unmount
+  useEffect(() => {
+    return () => {
+      if (viewStartRef.current > 0 && !sentDurationRef.current && token && post) {
+        const durationSec = (Date.now() - viewStartRef.current) / 1000;
+        sendViewDuration(token, postId, durationSec, post.tags);
+      }
+    };
+  }, [post?.id, token]);
 
   // Reset error state when post changes
   useEffect(() => {
@@ -277,6 +304,7 @@ function PostPage({
       } else {
         await api.likePost(postId);
         setActionState((s) => s && { ...s, isLiked: true });
+        if (token && post?.tags) sendRecSignal(token, postId, "like", post.tags);
       }
     } catch {}
   }
@@ -290,6 +318,7 @@ function PostPage({
       } else {
         await api.bookmarkPost(postId);
         setActionState((s) => s && { ...s, isBookmarked: true });
+        if (token && post?.tags) sendRecSignal(token, postId, "bookmark", post.tags);
       }
     } catch {}
   }
@@ -457,7 +486,10 @@ function PostPage({
             icon="download-outline"
             color={Colors.textSecondary}
             label="Download"
-            onPress={() => Linking.openURL(fullUrl)}
+            onPress={async () => {
+              const ext = isVideo ? "mp4" : "jpg";
+              await downloadMedia(fullUrl, `${post.id}.${ext}`);
+            }}
           />
           <ActionButton
             icon="share-outline"

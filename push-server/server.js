@@ -1,3 +1,5 @@
+// Load env from parent .env for local dev (Docker passes env vars directly)
+try { require("dotenv").config({ path: require("path").join(__dirname, "..", ".env") }); } catch {}
 const express = require("express");
 const Database = require("better-sqlite3");
 const crypto = require("crypto");
@@ -9,7 +11,7 @@ const PORT = parseInt(process.env.PORT || "4829", 10);
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL || "300000", 10); // 5 min default
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || crypto.randomBytes(32).toString("hex");
 
-const R34_BASE = "https://rule34vault.com";
+const R34_BASE = process.env.R34_API_BASE || "https://rule34vault.com";
 
 // ══════════════════════════════════════════════════════════════════════
 // MASTER TOGGLE — set to true to enable spam filtering & scanning

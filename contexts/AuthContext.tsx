@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Platform } from "react-native";
 import api, { UserProfile } from "../api/rule34vault";
 
@@ -65,6 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         api.setAuth(storedToken, parsed);
         setToken(storedToken);
         setUser(parsed);
+        console.log('JWT:', storedToken);
         // Refresh profile data in background
         try {
           const fresh = await api.getMe();

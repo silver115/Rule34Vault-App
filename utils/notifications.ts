@@ -1,11 +1,11 @@
-import { Platform } from "react-native";
-import * as Notifications from "expo-notifications";
-import * as Device from "expo-device";
-import * as SecureStore from "expo-secure-store";
 import Constants from "expo-constants";
+import * as Device from "expo-device";
+import * as Notifications from "expo-notifications";
+import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 
 const NOTIF_PREF_KEY = "push_notifications_enabled";
-const PUSH_SERVER_URL = Constants.expoConfig?.extra?.pushServerUrl || "";
+const PUSH_SERVER_URL = Constants.expoConfig?.extra?.pushServerUrl || process.env.EXPO_PUBLIC_PUSH_SERVER_URL || process.env.PUSH_SERVER_URL || "";
 
 // Configure how notifications appear when the app is in foreground
 Notifications.setNotificationHandler({

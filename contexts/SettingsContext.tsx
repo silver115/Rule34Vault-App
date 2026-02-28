@@ -8,6 +8,7 @@ import { Platform } from "react-native";
 //   high   — full images in grid + detail view
 
 export type PreviewQuality = "low" | "medium" | "high";
+export type ViewingMode = "grid" | "feed";
 
 export interface QualityOption {
   key: PreviewQuality;
@@ -48,6 +49,7 @@ export const QUALITY_OPTIONS: Record<PreviewQuality, QualityOption> = {
 // ── Storage ─────────────────────────────────────────────────────────
 
 const QUALITY_KEY = "preview_quality";
+const VIEWING_MODE_KEY = "viewing_mode";
 
 const storage = {
   async getItem(key: string): Promise<string | null> {
@@ -73,20 +75,28 @@ interface SettingsState {
   previewQuality: PreviewQuality;
   qualityOption: QualityOption;
   setPreviewQuality: (q: PreviewQuality) => void;
+  viewingMode: ViewingMode;
+  setViewingMode: (m: ViewingMode) => void;
 }
 
 const SettingsContext = createContext<SettingsState>({
   previewQuality: "medium",
   qualityOption: QUALITY_OPTIONS.medium,
   setPreviewQuality: () => {},
+  viewingMode: "grid",
+  setViewingMode: () => {},
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [quality, setQuality] = useState<PreviewQuality>("medium");
+  const [viewingMode, setViewingModeState] = useState<ViewingMode>("grid");
 
   useEffect(() => {
     storage.getItem(QUALITY_KEY).then((val) => {
       if (val && val in QUALITY_OPTIONS) setQuality(val as PreviewQuality);
+    }).catch(() => {});
+    storage.getItem(VIEWING_MODE_KEY).then((val) => {
+      if (val === "grid" || val === "feed") setViewingModeState(val);
     }).catch(() => {});
   }, []);
 
@@ -95,12 +105,19 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     storage.setItem(QUALITY_KEY, q).catch(() => {});
   }, []);
 
+  const setViewingMode = useCallback((m: ViewingMode) => {
+    setViewingModeState(m);
+    storage.setItem(VIEWING_MODE_KEY, m).catch(() => {});
+  }, []);
+
   return (
     <SettingsContext.Provider
       value={{
         previewQuality: quality,
         qualityOption: QUALITY_OPTIONS[quality],
         setPreviewQuality,
+        viewingMode,
+        setViewingMode,
       }}
     >
       {children}

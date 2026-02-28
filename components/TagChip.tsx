@@ -1,9 +1,11 @@
-import React, { useState, useCallback } from "react";
-import { Pressable, Text, StyleSheet, Alert, Platform } from "react-native";
+import React, { useState, useCallback, useRef } from "react";
+import { Pressable, Text, StyleSheet, Alert, Platform, Animated } from "react-native";
 import { useRouter } from "expo-router";
 import api, { Tag } from "../api/rule34vault";
 import { useAuth } from "../contexts/AuthContext";
 import { Colors, Radius, Spacing, FontSize, getTagColor } from "../constants/theme";
+
+const LONG_PRESS_MS = 400;
 
 interface TagChipProps {
   tag: Tag;
@@ -17,7 +19,16 @@ export function TagChip({ tag, onPress, compact }: TagChipProps) {
   const color = getTagColor(tag.type);
   const [subState, setSubState] = useState<"subscribed" | "unsubscribed" | null>(null);
 
+  // Scale animation for long-press indicator
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const didLongPress = useRef(false);
+
   function handlePress() {
+    if (didLongPress.current) {
+      didLongPress.current = false;
+      return;
+    }
     if (onPress) {
       onPress(tag);
     } else {
@@ -25,11 +36,10 @@ export function TagChip({ tag, onPress, compact }: TagChipProps) {
     }
   }
 
-  const handleLongPress = useCallback(async () => {
+  const triggerSubscriptionPrompt = useCallback(async () => {
     if (!isLoggedIn) return;
 
     try {
-      // Check current subscription status
       const subs = await api.getActiveTagSubscriptions();
       const isSubscribed = subs.some((t) => t.id === tag.id);
 
@@ -83,29 +93,66 @@ export function TagChip({ tag, onPress, compact }: TagChipProps) {
     }
   }, [tag, isLoggedIn]);
 
+  // Custom long-press via onPressIn/onPressOut (works on web + native)
+  const handlePressIn = useCallback(() => {
+    if (!isLoggedIn) return;
+    didLongPress.current = false;
+    // Animate scale up while holding
+    Animated.timing(scaleAnim, {
+      toValue: 1.15,
+      duration: LONG_PRESS_MS,
+      useNativeDriver: true,
+    }).start();
+    longPressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
+      // Pulse feedback then trigger prompt
+      Animated.sequence([
+        Animated.timing(scaleAnim, { toValue: 1.25, duration: 80, useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 1, duration: 120, useNativeDriver: true }),
+      ]).start(() => triggerSubscriptionPrompt());
+    }, LONG_PRESS_MS);
+  }, [isLoggedIn, triggerSubscriptionPrompt]);
+
+  const handlePressOut = useCallback(() => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    // Reset scale if long-press didn't fire
+    if (!didLongPress.current) {
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, []);
+
   const isHighlighted = subState === "subscribed";
   const isUnsubbed = subState === "unsubscribed";
 
   return (
-    <Pressable
-      onPress={handlePress}
-      onLongPress={isLoggedIn ? handleLongPress : undefined}
-      delayLongPress={400}
-      style={[
-        styles.chip,
-        { borderColor: color },
-        compact && styles.compact,
-        isHighlighted && { backgroundColor: color + "30", borderColor: color },
-        isUnsubbed && { opacity: 0.6 },
-      ]}
-    >
-      <Text style={[styles.text, { color }, compact && styles.compactText]}>
-        {tag.value}
-      </Text>
-      {!compact && tag.count > 0 && (
-        <Text style={styles.count}>{formatCount(tag.count)}</Text>
-      )}
-    </Pressable>
+    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+      <Pressable
+        onPress={handlePress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        style={[
+          styles.chip,
+          { borderColor: color },
+          compact && styles.compact,
+          isHighlighted && { backgroundColor: color + "30", borderColor: color },
+          isUnsubbed && { opacity: 0.6 },
+        ]}
+      >
+        <Text style={[styles.text, { color }, compact && styles.compactText]}>
+          {tag.value}
+        </Text>
+        {!compact && tag.count > 0 && (
+          <Text style={styles.count}>{formatCount(tag.count)}</Text>
+        )}
+      </Pressable>
+    </Animated.View>
   );
 }
 

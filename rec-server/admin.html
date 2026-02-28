@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>R34Vault · Rec Admin</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0d0d10; --card: #16161c; --border: #26263a; --border2: #1e1e2e;
+      --accent: #7c3aed; --accent2: #a78bfa; --danger: #dc2626;
+      --warn: #d97706; --text: #e2e8f0; --muted: #94a3b8; --faint: #475569;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg); color: var(--text);
+      min-height: 100vh; font-size: 14px;
+    }
+
+    /* ── Top bar ── */
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; height: 52px;
+      background: var(--card); border-bottom: 1px solid var(--border);
+    }
+    .topbar-brand { display: flex; align-items: center; gap: 9px; }
+    .topbar-logo {
+      width: 26px; height: 26px; border-radius: 7px;
+      background: linear-gradient(135deg, var(--accent), #4f46e5);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 800; color: #fff;
+    }
+    .topbar-title { font-size: 14px; font-weight: 700; color: var(--accent2); }
+    .topbar-right { display: flex; align-items: center; gap: 10px; }
+
+    .status-badge {
+      display: flex; align-items: center; gap: 6px;
+      padding: 4px 10px; border-radius: 100px;
+      background: var(--border2); font-size: 12px; color: var(--muted);
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+    .dot.online { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+    .dot.offline { background: #ef4444; }
+
+    /* ── Token bar ── */
+    .token-bar {
+      display: none; align-items: center; gap: 8px;
+      padding: 8px 24px; background: #1a1a24;
+      border-bottom: 1px solid var(--border);
+    }
+    .token-bar.show { display: flex; }
+    .token-bar label { font-size: 12px; color: var(--muted); white-space: nowrap; }
+    .token-bar input {
+      flex: 1; max-width: 300px; padding: 5px 10px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 7px; color: var(--text); font-size: 13px;
+    }
+    .token-bar input:focus { outline: none; border-color: var(--accent); }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 6px 13px; border: none; border-radius: 7px;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      transition: filter 0.15s, opacity 0.15s; white-space: nowrap;
+    }
+    .btn:hover { filter: brightness(1.15); }
+    .btn:active { opacity: 0.75; }
+    .btn-primary  { background: var(--accent);  color: #fff; }
+    .btn-danger   { background: var(--danger);  color: #fff; }
+    .btn-warn     { background: var(--warn);    color: #fff; }
+    .btn-ghost    { background: var(--border2); color: var(--muted); }
+    .btn-ghost:hover { color: var(--text); }
+    .btn-sm { padding: 4px 9px; font-size: 11px; border-radius: 6px; }
+
+    /* ── Stats row ── */
+    .stats { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px 24px 0; }
+    .stat {
+      flex: 1; min-width: 110px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 11px; padding: 13px 16px;
+    }
+    .stat-label {
+      font-size: 10px; font-weight: 600; color: var(--faint);
+      text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px;
+    }
+    .stat-val { font-size: 24px; font-weight: 800; color: var(--accent2); line-height: 1; }
+    .stat-sub { font-size: 11px; color: var(--faint); margin-top: 2px; }
+
+    /* ── Main ── */
+    .main { padding: 16px 24px 40px; }
+    .section-hdr {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .section-hdr h2 {
+      font-size: 11px; font-weight: 700; color: var(--faint);
+      text-transform: uppercase; letter-spacing: 0.7px;
+    }
+
+    /* ── User grid ── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+      gap: 12px;
+    }
+
+    .ucard {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 13px; padding: 15px 16px;
+      transition: border-color 0.2s;
+    }
+    .ucard:hover { border-color: #4c1d9566; }
+
+    .ucard-hdr {
+      display: flex; align-items: flex-start;
+      justify-content: space-between; margin-bottom: 8px;
+    }
+    .uid { font-size: 15px; font-weight: 700; color: var(--text); }
+    .uid small { font-size: 11px; color: var(--faint); font-weight: 400; margin-left: 4px; }
+
+    .umeta { display: flex; gap: 14px; margin-bottom: 9px; }
+    .umeta-item { font-size: 12px; color: var(--faint); }
+    .umeta-item b { color: var(--muted); font-weight: 600; }
+
+    .refreshed { font-size: 11px; color: var(--faint); margin-bottom: 9px; }
+
+    .tags-wrap { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; min-height: 22px; }
+    .tag {
+      padding: 2px 8px; border-radius: 100px; font-size: 11px; font-weight: 500;
+      background: #1e1535; border: 1px solid #3b1a6a; color: var(--accent2);
+    }
+    .tag-more {
+      padding: 2px 8px; border-radius: 100px; font-size: 11px;
+      background: var(--border2); color: var(--faint); cursor: pointer;
+    }
+    .tag-more:hover { color: var(--muted); }
+
+    .uactions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    /* ── Empty / loading ── */
+    .empty { text-align: center; padding: 60px 20px; color: var(--faint); }
+    .spinner {
+      width: 26px; height: 26px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%; margin: 0 auto 12px;
+      animation: spin 0.65s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Modal ── */
+    .backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.7); z-index: 100;
+      align-items: center; justify-content: center; padding: 16px;
+    }
+    .backdrop.open { display: flex; }
+    .modal {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 16px; width: 100%; max-width: 480px;
+      max-height: 82vh; display: flex; flex-direction: column;
+    }
+    .modal-hdr {
+      padding: 15px 18px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .modal-title { font-size: 14px; font-weight: 700; }
+    .modal-close {
+      background: none; border: none; color: var(--faint);
+      cursor: pointer; font-size: 18px; line-height: 1; padding: 2px;
+    }
+    .modal-close:hover { color: var(--text); }
+    .modal-body { padding: 16px 18px; overflow-y: auto; flex: 1; }
+
+    .profile-meta {
+      display: flex; flex-wrap: wrap; gap: 12px;
+      margin-bottom: 14px; padding-bottom: 12px;
+      border-bottom: 1px solid var(--border2);
+    }
+    .profile-meta-item { font-size: 12px; color: var(--faint); }
+    .profile-meta-item b { color: var(--accent2); }
+
+    .tag-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 0; border-bottom: 1px solid var(--border2);
+    }
+    .tag-row:last-child { border-bottom: none; }
+    .tag-name { font-size: 12px; color: var(--accent2); width: 160px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tag-bar-bg { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .tag-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; }
+    .tag-score-val { font-size: 11px; color: var(--faint); width: 46px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed; bottom: 22px; right: 22px; z-index: 200;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 11px 16px; font-size: 13px;
+      max-width: 320px;
+      transform: translateY(60px); opacity: 0;
+      transition: transform 0.22s ease, opacity 0.22s ease;
+      pointer-events: none;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.ok  { border-left: 3px solid #22c55e; }
+    .toast.err { border-left: 3px solid #ef4444; }
+    .toast.info { border-left: 3px solid var(--accent); }
+    .updated-txt { font-size: 11px; color: var(--faint); }
+    .username-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+    .username-tag { font-size: 12px; color: var(--muted); }
+    .visit-link { font-size: 11px; color: var(--accent2); text-decoration: none; padding: 1px 6px; border: 1px solid #3b1a6a; border-radius: 100px; background: #1e1535; }
+    .visit-link:hover { background: #2e2050; }
+    .tag-bar-fill { height: 100%; border-radius: 2px; background: var(--accent); }
+    .profile-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border2); }
+    .profile-meta-item { font-size: 12px; color: var(--faint); }
+    .profile-meta-item b { color: var(--accent2); }
+    .tag-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border2); }
+    .tag-row:last-child { border-bottom: none; }
+    .tag-name { font-size: 11px; color: var(--accent2); width: 150px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tag-bar-bg { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .tag-score-val { font-size: 11px; color: var(--faint); width: 46px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+  </style>
+</head>
+<body>
+
+<!-- Top bar -->
+<header class="topbar">
+  <div class="topbar-brand">
+    <div class="topbar-logo">R</div>
+    <span class="topbar-title">Rec Server Admin</span>
+  </div>
+  <div class="topbar-right">
+    <div class="status-badge" id="statusBadge">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Connecting…</span>
+    </div>
+    <span class="updated-txt" id="updatedTxt"></span>
+    <button class="btn btn-ghost btn-sm" onclick="loadAll()">↺ Refresh</button>
+  </div>
+</header>
+
+<!-- Token auth bar (shown on 401) -->
+<div class="token-bar" id="tokenBar">
+  <label>Admin Token:</label>
+  <input id="tokenInput" type="password" placeholder="Enter ADMIN_TOKEN value…" />
+  <button class="btn btn-primary btn-sm" onclick="applyToken()">Apply</button>
+</div>
+
+<!-- Stats -->
+<div class="stats">
+  <div class="stat"><div class="stat-label">Version</div><div class="stat-val" id="sVer">—</div></div>
+  <div class="stat"><div class="stat-label">Users</div><div class="stat-val" id="sUsers">—</div></div>
+  <div class="stat"><div class="stat-label">Seen Posts</div><div class="stat-val" id="sSeen">—</div></div>
+  <div class="stat"><div class="stat-label">Signals</div><div class="stat-val" id="sSignals">—</div></div>
+  <div class="stat"><div class="stat-label">Bandit Arms</div><div class="stat-val" id="sArms">—</div></div>
+  <div class="stat"><div class="stat-label">IDF Docs</div><div class="stat-val" id="sIdf">—</div><div class="stat-sub">tag vocab</div></div>
+  <div class="stat"><div class="stat-label">DB Size</div><div class="stat-val" id="sDb">—</div><div class="stat-sub" id="sDbUnit"></div></div>
+</div>
+<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:14px 24px 0">
+  <span style="font-size:11px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-right:4px">Global:</span>
+  <button class="btn btn-warn btn-sm" onclick="expireAll()">↺ Expire All Profiles</button>
+  <button class="btn btn-ghost btn-sm" onclick="clearAllSeen()">🗑 Clear All Seen</button>
+</div>
+
+<!-- User list -->
+<main class="main">
+  <div class="section-hdr">
+    <h2 style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:0.7px">Users <span id="userCount" style="font-weight:400"></span></h2>
+    <input id="searchInput" type="text" placeholder="🔍 Search username or tag…" oninput="filterCards()" style="flex:1;max-width:260px;padding:5px 10px;background:var(--border2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:12px" />
+  </div>
+  <div class="grid" id="grid">
+    <div class="empty"><div class="spinner"></div>Loading…</div>
+  </div>
+</main>
+<div style="padding:16px 24px 32px">
+  <h2 style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:0.7px;margin-bottom:10px">Activity Log</h2>
+  <div id="logList" style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;color:var(--faint);font-style:italic">No actions yet.</span></div>
+</div>
+<!-- Profile modal -->
+<div class="backdrop" id="profileModal" onclick="backdropClick(event)">
+  <div class="modal" style="max-width:520px;max-height:85vh">
+    <div class="modal-hdr">
+      <span class="modal-title" id="modalTitle">Profile</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div style="display:flex;border-bottom:1px solid var(--border);padding:0 18px;flex-shrink:0" id="modalTabs">
+      <button id="tbTags" onclick="switchTab('tags')" style="padding:9px 14px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--accent2);border-bottom:2px solid var(--accent2);margin-bottom:-1px">Tags</button>
+      <button id="tbArms" onclick="switchTab('arms')" style="padding:9px 14px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--faint);border-bottom:2px solid transparent;margin-bottom:-1px">Bandit Arms</button>
+      <button id="tbSignals" onclick="switchTab('signals')" style="padding:9px 14px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--faint);border-bottom:2px solid transparent;margin-bottom:-1px">Signals</button>
+    </div>
+    <div id="tabTags" style="padding:14px 18px;overflow-y:auto;flex:1"></div>
+    <div id="tabArms" style="display:none;padding:14px 18px;overflow-y:auto;flex:1"></div>
+    <div id="tabSignals" style="display:none;padding:14px 18px;overflow-y:auto;flex:1"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  /* ─── State ─── */
+  let adminToken='', lastUpdated=null, pollTimer=null, allUsers=[], currentModal=null;
+  const $=id=>document.getElementById(id);
+
+  /* ─── Core API ─── */
+  function hdrs(){const h={'Content-Type':'application/json'};if(adminToken)h['x-admin-token']=adminToken;return h;}
+  async function api(method,url,body){
+    const opts={method,headers:hdrs()};
+    if(body!==undefined)opts.body=JSON.stringify(body);
+    const r=await fetch(url,opts);
+    if(r.status===401){$('tokenBar').classList.add('show');throw new Error('Unauthorized — enter your admin token above');}
+    if(!r.ok)throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  }
+
+  /* ─── Utilities ─── */
+  function toast(msg,type='ok'){const el=$('toast');el.textContent=msg;el.className=`toast ${type} show`;clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),3500);}
+  function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function ago(str){
+    if(!str)return'never';
+    const ms=Date.now()-new Date(str.replace(' ','T')+'Z').getTime();
+    if(isNaN(ms)||ms<0)return'just now';
+    const m=Math.floor(ms/60000);
+    if(m<1)return'just now';if(m<60)return`${m}m ago`;
+    const h=Math.floor(m/60);if(h<24)return`${h}h ago`;return`${Math.floor(h/24)}d ago`;
+  }
+  function fmtBytes(b){if(b<1024)return[b,'B'];if(b<1048576)return[(b/1024).toFixed(1),'KB'];return[(b/1048576).toFixed(2),'MB'];}
+  function applyToken(){adminToken=$('tokenInput').value.trim();$('tokenBar').classList.remove('show');loadAll();}
+
+  /* ─── Activity log ─── */
+  const LOG=[];
+  function logAction(msg,type='ok'){
+    const now=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    LOG.unshift({msg,type,time:now});if(LOG.length>20)LOG.pop();
+    $('logList').innerHTML=LOG.map(e=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--card);border:1px solid var(--border2);border-radius:7px;font-size:12px"><span style="color:var(--faint);font-size:11px;white-space:nowrap">${e.time}</span><span style="color:var(--muted);flex:1">${esc(e.msg)}</span><span style="padding:1px 6px;border-radius:100px;font-size:10px;font-weight:700;background:${e.type==='ok'?'#14532d':e.type==='warn'?'#451a03':'#450a0a'};color:${e.type==='ok'?'#4ade80':e.type==='warn'?'#fb923c':'#f87171'}">${e.type.toUpperCase()}</span></div>`).join('');
+  }
+
+  /* ─── Live "updated Xs ago" ─── */
+  setInterval(()=>{
+    if(!lastUpdated)return;
+    const s=Math.floor((Date.now()-lastUpdated)/1000);
+    $('updatedTxt').textContent=s<5?'':`Updated ${s}s ago`;
+  },1000);
+
+  /* ─── Health ─── */
+  async function loadHealth(){
+    try{
+      const d=await api('GET','/api/health');
+      $('statusDot').className='dot online';$('statusText').textContent='Online';
+      $('sVer').textContent=`v${d.version??'?'}`;
+      $('sUsers').textContent=(d.profiledUsers??0).toLocaleString();
+      $('sSeen').textContent=(d.seenRecords??0).toLocaleString();
+      $('sSignals').textContent=(d.signals??0).toLocaleString();
+      $('sArms').textContent=(d.banditArms??0).toLocaleString();
+      $('sIdf').textContent=(d.idfDocs??0).toLocaleString();
+      if(d.dbSize){const[v,u]=fmtBytes(d.dbSize);$('sDb').textContent=v;$('sDbUnit').textContent=u;}
+      lastUpdated=Date.now();
+    }catch{$('statusDot').className='dot offline';$('statusText').textContent='Offline';}
+  }
+
+  /* ─── User list ─── */
+  async function loadUsers(){
+    try{
+      allUsers=await api('GET','/admin/users');
+      $('userCount').textContent=`(${allUsers.length})`;
+      renderGrid(allUsers);
+    }catch(e){$('grid').innerHTML=`<div class="empty">Error: ${esc(e.message)}</div>`;}
+  }
+
+  function renderGrid(users){
+    if(!users.length){$('grid').innerHTML=`<div class="empty">No users found${$('searchInput').value?' matching your search':''}.</div>`;return;}
+    $('grid').innerHTML=users.map(renderCard).join('');
+  }
+
+  function filterCards(){
+    const q=$('searchInput').value.toLowerCase().trim();
+    if(!q){renderGrid(allUsers);return;}
+    renderGrid(allUsers.filter(u=>
+      (u.username&&u.username.toLowerCase().includes(q))||
+      String(u.userId).includes(q)||
+      u.topTags.some(t=>t.tag.toLowerCase().includes(q))
+    ));
+  }
+
+  function renderCard(u){
+    const pills=u.topTags.slice(0,5).map(t=>`<span class="tag" title="score:${t.score}">${esc(t.tag)}</span>`).join('');
+    const more=u.totalTags>5?`<span class="tag-more" onclick="showProfile(${u.userId})">+${u.totalTags-5} more</span>`:'';
+    const urow=u.username
+      ?`<div class="username-row"><span class="username-tag">@${esc(u.username)}</span><a class="visit-link" href="https://rule34vault.com/u/${esc(u.username)}" target="_blank" rel="noopener">🌐 Visit</a></div>`
+      :`<div class="username-row"><span style="font-size:11px;color:var(--faint)">Username stored on first request</span></div>`;
+    return`<div class="ucard" id="uc-${u.userId}">
+      <div class="ucard-hdr"><div class="uid">User <small>#${u.userId}</small></div></div>
+      ${urow}
+      <div class="umeta">
+        <div class="umeta-item"><b>${u.seenCount.toLocaleString()}</b> seen</div>
+        <div class="umeta-item"><b>${u.totalTags.toLocaleString()}</b> tags</div>
+        <div class="umeta-item"><b>${u.armCount.toLocaleString()}</b> arms</div>
+      </div>
+      <div class="refreshed">Refreshed: ${ago(u.lastRefreshed)}</div>
+      <div class="tags-wrap">${pills}${more}</div>
+      <div class="uactions">
+        <button class="btn btn-ghost btn-sm" onclick="showProfile(${u.userId})">👁 Profile</button>
+        <button class="btn btn-warn btn-sm"  onclick="expireUser(${u.userId})">↺ Rebuild</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearSeen(${u.userId})">🗑 Seen</button>
+        <button class="btn btn-danger btn-sm" onclick="removeUser(${u.userId})">✕</button>
+      </div>
+    </div>`;
+  }
+
+  /* ─── Modal tabs ─── */
+  function switchTab(name){
+    ['tags','arms','signals'].forEach((t,i)=>{
+      const btn=$(`tb${t.charAt(0).toUpperCase()+t.slice(1)}`);
+      const active=t===name;
+      btn.style.color=active?'var(--accent2)':'var(--faint)';
+      btn.style.borderBottomColor=active?'var(--accent2)':'transparent';
+      $(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display=active?'block':'none';
+    });
+    if(currentModal&&name!=='tags')loadModalTab(name,currentModal);
+  }
+
+  const loadedTabs={};
+  async function loadModalTab(tab,userId){
+    const key=`${tab}-${userId}`;if(loadedTabs[key])return;loadedTabs[key]=true;
+    const pid=`tab${tab.charAt(0).toUpperCase()+tab.slice(1)}`;
+    $(pid).innerHTML='<div class="spinner" style="margin:20px auto"></div>';
+    try{
+      if(tab==='arms'){
+        const arms=await api('GET',`/admin/user/${userId}/arms`);
+        if(!arms.length){$(pid).innerHTML='<p style="color:var(--faint);font-size:13px;padding:10px 0">No bandit arms yet.</p>';return;}
+        const maxR=arms[0].estRate||1;
+        $(pid).innerHTML='<p style="font-size:11px;color:var(--faint);margin-bottom:10px">Estimated engagement rate per tag (α/(α+β))</p>'+
+          arms.map(a=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border2)"><span style="font-size:11px;color:var(--muted);width:140px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(a.tag)}">${esc(a.tag)}</span><div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;border-radius:2px;background:#3b82f6;width:${Math.round(a.estRate/maxR*100)}%"></div></div><span style="font-size:10px;color:var(--faint);width:70px;flex-shrink:0">α${a.alpha.toFixed(1)} β${a.beta.toFixed(1)}</span><span style="font-size:11px;color:#60a5fa;width:38px;text-align:right">${(a.estRate*100).toFixed(1)}%</span></div>`).join('');
+      }else if(tab==='signals'){
+        const sigs=await api('GET',`/admin/user/${userId}/signals`);
+        if(!sigs.length){$(pid).innerHTML='<p style="color:var(--faint);font-size:13px;padding:10px 0">No signals recorded yet.</p>';return;}
+        const lbl={like:'like',bookmark:'bkmk',super_like:'super',skip:'skip',complete:'done',view_duration:'view'};
+        const col={like:'#14532d|#4ade80',bookmark:'#1e3a5f|#60a5fa',super_like:'#3b0764|#c084fc',skip:'#450a0a|#f87171',complete:'#1c2a1c|#86efac',view_duration:'#1a1a2e|#818cf8'};
+        $(pid).innerHTML=sigs.map(s=>{const[bg,fg]=(col[s.signal]||'#333|#aaa').split('|');return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border2)"><span style="padding:2px 7px;border-radius:100px;font-size:10px;font-weight:700;white-space:nowrap;background:${bg};color:${fg}">${lbl[s.signal]??s.signal}</span><span style="font-size:11px;color:var(--muted);flex:1">Post <a href="https://rule34vault.com/post/${s.post_id}" target="_blank" rel="noopener" style="color:var(--accent2);text-decoration:none">#${s.post_id}</a></span><span style="font-size:10px;color:var(--faint);white-space:nowrap">${ago(s.created_at)}</span></div>`;}).join('');
+      }
+    }catch(e){$(pid).innerHTML=`<p style="color:#ef4444">${esc(e.message)}</p>`;}
+  }
+
+  async function showProfile(userId){
+    currentModal=userId;
+    Object.keys(loadedTabs).filter(k=>k.endsWith(`-${userId}`)).forEach(k=>delete loadedTabs[k]);
+    $('modalTitle').textContent=`User #${userId}`;
+    $('tabTags').innerHTML=$('tabArms').innerHTML=$('tabSignals').innerHTML='';
+    switchTab('tags');
+    $('tabTags').innerHTML='<div class="spinner" style="margin:20px auto"></div>';
+    $('profileModal').classList.add('open');
+    try{
+      const d=await api('GET',`/admin/user/${userId}`);
+      $('modalTitle').textContent=d.username?`User #${userId} · @${esc(d.username)}`:`User #${userId}`;
+      const maxS=d.topTags[0]?.score||1;
+      $('tabTags').innerHTML=`<div class="profile-meta">
+        <div class="profile-meta-item"><b>${d.totalTags}</b> total tags</div>
+        <div class="profile-meta-item"><b>${d.seenCount.toLocaleString()}</b> seen</div>
+        <div class="profile-meta-item"><b>${d.armCount}</b> arms</div>
+        <div class="profile-meta-item">refreshed <b>${ago(d.lastRefreshed)}</b></div>
+      </div>
+      <p style="font-size:11px;color:var(--faint);margin-bottom:8px">Top ${d.topTags.length} of ${d.totalTags} tags</p>`+
+      (d.topTags.map(t=>`<div class="tag-row"><span class="tag-name" title="${esc(t.tag)}">${esc(t.tag)}</span><div class="tag-bar-bg"><div class="tag-bar-fill" style="width:${Math.round(t.score/maxS*100)}%;background:var(--accent)"></div></div><span class="tag-score-val">${t.score}</span></div>`).join('')||'<p style="color:var(--faint);font-size:13px">No tag data yet.</p>');
+    }catch(e){$('tabTags').innerHTML=`<p style="color:#ef4444;padding:10px 0">${esc(e.message)}</p>`;}
+  }
+
+  function closeModal(){$('profileModal').classList.remove('open');currentModal=null;}
+  function backdropClick(e){if(e.target===$('profileModal'))closeModal();}
+
+  /* ─── Per-user actions ─── */
+  async function expireUser(userId){
+    if(!confirm(`Force full profile rebuild for user #${userId}?\n\nCached profile is discarded. A full history rebuild runs next time they open the For You tab.`))return;
+    try{
+      await api('POST',`/admin/user/${userId}/expire`);
+      toast(`#${userId} — profile expired, rebuilds on next request`,'info');
+      logAction(`User #${userId} force-expired`,'warn');
+      await loadUsers();
+    }catch(e){toast(e.message,'err');logAction(e.message,'err');}
+  }
+
+  async function clearSeen(userId){
+    if(!confirm(`Clear seen post history for user #${userId}?\n\nThey may see posts they've already viewed.`))return;
+    try{
+      await api('POST',`/admin/user/${userId}/clear-seen`);
+      toast(`Seen history cleared for #${userId}`,'ok');
+      logAction(`User #${userId} seen posts cleared`,'ok');
+      await loadUsers();
+    }catch(e){toast(e.message,'err');logAction(e.message,'err');}
+  }
+
+  async function removeUser(userId){
+    if(!confirm(`Remove ALL data for user #${userId}?\n\nPermanently deletes profile, seen posts, bandit arms, signals and cursors.`))return;
+    if(!confirm(`Are you sure? This cannot be undone.`))return;
+    try{
+      await api('DELETE',`/admin/user/${userId}`);
+      toast(`User #${userId} fully removed`,'ok');
+      logAction(`User #${userId} removed`,'warn');
+      $(`uc-${userId}`)?.remove();
+      allUsers=allUsers.filter(u=>u.userId!==userId);
+      $('userCount').textContent=`(${allUsers.length})`;
+      await loadHealth();
+    }catch(e){toast(e.message,'err');logAction(e.message,'err');}
+  }
+
+  /* ─── Global actions ─── */
+  async function expireAll(){
+    if(!confirm(`Expire ALL user profiles?\n\nEvery user gets a full history rebuild next time they open For You.`))return;
+    try{
+      const d=await api('POST','/admin/users/expire-all');
+      toast(`All ${d.count} profiles expired`,'info');
+      logAction(`All ${d.count} profiles force-expired`,'warn');
+      await loadAll();
+    }catch(e){toast(e.message,'err');logAction(e.message,'err');}
+  }
+
+  async function clearAllSeen(){
+    if(!confirm(`Clear ALL seen records globally?\n\nRemoves ${$('sSeen').textContent||'?'} entries across all users.`))return;
+    if(!confirm(`Confirm: clear all seen history for every user? Cannot be undone.`))return;
+    try{
+      const d=await api('POST','/admin/users/clear-all-seen');
+      toast(`Cleared ${d.count.toLocaleString()} seen records globally`,'ok');
+      logAction(`Global seen posts cleared (${d.count})`,'warn');
+      await loadAll();
+    }catch(e){toast(e.message,'err');logAction(e.message,'err');}
+  }
+
+  /* ─── Auto-poll & Init ─── */
+  function startPoll(){clearInterval(pollTimer);pollTimer=setInterval(()=>{loadHealth();loadUsers();},10000);}
+  async function loadAll(){await loadHealth();await loadUsers();}
+
+  $('tokenInput').addEventListener('keydown',e=>{if(e.key==='Enter')applyToken();});
+  loadAll().then(startPoll);
+</script>
+</body>
+</html>

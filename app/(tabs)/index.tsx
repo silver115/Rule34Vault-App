@@ -3,9 +3,11 @@ import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import api, { Post, SearchFilters } from "../../api/rule34vault";
 import { PostGrid } from "../../components/PostGrid";
+import { FeedView } from "../../components/FeedView";
 import { FilterBar } from "../../components/FilterBar";
 import { Colors, Radius, Spacing, FontSize } from "../../constants/theme";
 import { useAppTheme } from "../../contexts/ThemeContext";
+import { useSettings } from "../../contexts/SettingsContext";
 
 type FeedType = "recent" | "hot" | "highest" | "comments";
 
@@ -118,6 +120,7 @@ export default function BrowseScreen() {
   const activeFeed = FEED_OPTIONS.find((f) => f.key === feedType)!;
   const availableFeeds = FEED_OPTIONS;
   const { colors } = useAppTheme();
+  const { viewingMode, setViewingMode } = useSettings();
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -133,6 +136,16 @@ export default function BrowseScreen() {
             name={feedOpen ? "chevron-up" : "chevron-down"}
             size={14}
             color={colors.textMuted}
+          />
+        </Pressable>
+        <Pressable
+          style={[styles.viewToggle, { backgroundColor: colors.bgCard, borderColor: colors.border }]}
+          onPress={() => setViewingMode(viewingMode === "grid" ? "feed" : "grid")}
+        >
+          <Ionicons
+            name={viewingMode === "grid" ? "phone-portrait-outline" : "grid-outline"}
+            size={16}
+            color={colors.accent}
           />
         </Pressable>
       </View>
@@ -172,13 +185,24 @@ export default function BrowseScreen() {
 
       <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
       <PostGrid
-        key={`${feedType}-${filters.type ?? "all"}-${filters.minScore ?? 0}-${filters.includeTags?.join(",") ?? ""}`}
+        key={`grid-${feedType}-${filters.type ?? "all"}-${filters.includeTags?.join(",") ?? ""}`}
         posts={posts}
         isLoading={isLoading}
         isLoadingMore={isLoadingMore}
         onRefresh={() => doLoad(true)}
         onEndReached={() => doLoad(false)}
       />
+      {viewingMode === "feed" && (
+        <FeedView
+          key={`feed-${feedType}-${filters.type ?? "all"}-${filters.includeTags?.join(",") ?? ""}`}
+          posts={posts}
+          isLoading={isLoading}
+          isLoadingMore={isLoadingMore}
+          onRefresh={() => doLoad(true)}
+          onEndReached={() => doLoad(false)}
+          onExit={() => setViewingMode("grid")}
+        />
+      )}
     </View>
   );
 }
@@ -189,6 +213,8 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bg,
   },
   feedBar: {
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.sm,
     paddingBottom: Spacing.xs,
@@ -204,6 +230,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.bgCard,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  viewToggle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1,
+    marginLeft: "auto",
   },
   feedLabel: {
     fontSize: FontSize.sm,

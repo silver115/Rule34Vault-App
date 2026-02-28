@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Text,
   RefreshControl,
+  Platform,
 } from "react-native";
 import { Post } from "../api/rule34vault";
 import { PostCard, NUM_COLUMNS, GAP, isBrokenPost, onBrokenPostsChange } from "./PostCard";
@@ -78,6 +79,11 @@ export function PostGrid({
       showsVerticalScrollIndicator={false}
       onEndReached={onEndReached}
       onEndReachedThreshold={0.5}
+      removeClippedSubviews={Platform.OS !== "web"}
+      windowSize={5}
+      maxToRenderPerBatch={6}
+      initialNumToRender={8}
+      updateCellsBatchingPeriod={50}
       ListHeaderComponent={ListHeaderComponent}
       ListEmptyComponent={
         <View style={styles.center}>

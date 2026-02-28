@@ -15,7 +15,7 @@ import { useRouter } from "expo-router";
 import { useAuth } from "../contexts/AuthContext";
 import { Radius, Spacing, FontSize } from "../constants/theme";
 import { useAppTheme, THEMES, ThemeName } from "../contexts/ThemeContext";
-import { useSettings, QUALITY_OPTIONS, PreviewQuality } from "../contexts/SettingsContext";
+import { useSettings, QUALITY_OPTIONS, PreviewQuality, ViewingMode } from "../contexts/SettingsContext";
 import {
   getNotificationPref,
   setNotificationPref,
@@ -31,11 +31,12 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { user, token: authToken, isLoggedIn, logout } = useAuth();
   const { themeName, colors, setTheme } = useAppTheme();
-  const { previewQuality, qualityOption, setPreviewQuality } = useSettings();
+  const { previewQuality, qualityOption, setPreviewQuality, viewingMode, setViewingMode } = useSettings();
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
   const [qualityDropdownOpen, setQualityDropdownOpen] = useState(false);
+  const [viewModeOpen, setViewModeOpen] = useState(false);
 
   useEffect(() => {
     getNotificationPref().then(setPushEnabled).catch(() => {});
@@ -165,6 +166,81 @@ export default function SettingsScreen() {
                         {isActive ? "  ✓" : ""}
                       </Text>
                       <Text style={[styles.themeSub, { color: colors.textMuted }]}>{t.description}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Modal>
+
+        {/* Viewing Mode Section */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Browsing</Text>
+        <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
+          <Pressable
+            style={[styles.row, { borderBottomColor: colors.border }]}
+            onPress={() => setViewModeOpen(true)}
+          >
+            <Ionicons name={viewingMode === "feed" ? "phone-portrait-outline" : "grid-outline"} size={20} color={colors.textSecondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>Viewing Mode</Text>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+                {viewingMode === "grid" ? "Grid — Classic thumbnail grid" : "Feed — TikTok-style vertical scroll"}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </Pressable>
+        </View>
+
+        {/* Viewing Mode Picker Modal */}
+        <Modal
+          visible={viewModeOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setViewModeOpen(false)}
+        >
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setViewModeOpen(false)}
+          >
+            <View style={[styles.modalContent, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Viewing Mode</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
+                Choose how you browse posts
+              </Text>
+              {(["grid", "feed"] as ViewingMode[]).map((mode) => {
+                const isActive = viewingMode === mode;
+                const icon = mode === "grid" ? "grid-outline" : "phone-portrait-outline";
+                const label = mode === "grid" ? "Grid" : "Feed";
+                const desc = mode === "grid"
+                  ? "Classic thumbnail grid with tap to open"
+                  : "Full-screen vertical scroll, double-tap to like";
+                return (
+                  <Pressable
+                    key={mode}
+                    style={[
+                      styles.themeOption,
+                      { borderColor: colors.border },
+                      isActive && { borderColor: colors.accent, backgroundColor: colors.accent + "15" },
+                    ]}
+                    onPress={() => {
+                      setViewingMode(mode);
+                      setViewModeOpen(false);
+                    }}
+                  >
+                    <View style={styles.qualityIconWrap}>
+                      <Ionicons
+                        name={icon}
+                        size={20}
+                        color={isActive ? colors.accent : colors.textSecondary}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.themeLabel, { color: colors.text }]}>
+                        {label}
+                        {isActive ? "  ✓" : ""}
+                      </Text>
+                      <Text style={[styles.themeSub, { color: colors.textMuted }]}>{desc}</Text>
                     </View>
                   </Pressable>
                 );

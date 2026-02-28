@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  rec-server:
+    image: node:20-alpine
+    container_name: r34vault-rec-server
+    restart: unless-stopped
+    working_dir: /app
+    ports:
+      - "${REC_SERVER_PORT:-4830}:${REC_SERVER_PORT:-4830}"
+    env_file:
+      - ../.env
+    environment:
+      - PORT=${REC_SERVER_PORT:-4830}
+      - R34_API_BASE=${R34_API_BASE:-https://rule34vault.com}
+      - PROFILE_TTL=${PROFILE_TTL:-3600000}
+      - MAX_SEEN=${MAX_SEEN:-5000}
+      - LIKED_HISTORY=${LIKED_HISTORY:-100}
+      - BOOKMARKED_HISTORY=${BOOKMARKED_HISTORY:-50}
+      - DECAY_LAMBDA=${DECAY_LAMBDA:-0.03}
+      - DIVERSITY_ARTIST_CAP=${DIVERSITY_ARTIST_CAP:-3}
+      - DIVERSITY_CHAR_CAP=${DIVERSITY_CHAR_CAP:-5}
+      - BANDIT_PRIOR_ALPHA=${BANDIT_PRIOR_ALPHA:-1}
+      - BANDIT_PRIOR_BETA=${BANDIT_PRIOR_BETA:-10}
+      - SEEN_SUPPRESSION_DAYS=${SEEN_SUPPRESSION_DAYS:-30}
+      - INCREMENTAL_TTL=${INCREMENTAL_TTL:-300000}
+      - FULL_REBUILD_TTL=${FULL_REBUILD_TTL:-86400000}
+      - MAX_HISTORY_PAGES=${MAX_HISTORY_PAGES:-100}
+      - ADMIN_TOKEN=${ADMIN_TOKEN:-}
+    volumes:
+      - ./rec-server-app:/app
+      - rec-data:/app/data
+    command: sh -c "npm install --production && node server.js"
+    networks:
+      - rec-net
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: r34vault-rec-cloudflared
+    restart: unless-stopped
+    command: tunnel run
+    env_file:
+      - ../.env
+    environment:
+      - TUNNEL_TOKEN=${REC_CLOUDFLARE_TUNNEL_TOKEN}
+    networks:
+      - rec-net
+    depends_on:
+      - rec-server
+
+volumes:
+  rec-data:
+    driver: local
+
+networks:
+  rec-net:
+    driver: bridge

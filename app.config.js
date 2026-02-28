@@ -28,6 +28,15 @@ config.extra = config.extra || {};
 if (env.PUSH_SERVER_URL) {
   config.extra.pushServerUrl = env.PUSH_SERVER_URL;
 }
+if (env.EXPO_PUBLIC_PUSH_SERVER_URL) {
+  config.extra.pushServerUrl = env.EXPO_PUBLIC_PUSH_SERVER_URL;
+}
+if (env.REC_SERVER_URL || process.env.REC_SERVER_URL) {
+  config.extra.recServerUrl = env.REC_SERVER_URL || process.env.REC_SERVER_URL;
+}
+if (env.EXPO_PUBLIC_REC_SERVER_URL) {
+  config.extra.recServerUrl = env.EXPO_PUBLIC_REC_SERVER_URL;
+}
 
 module.exports = ({ config: _cfg }) => {
   return {

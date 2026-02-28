@@ -1,13 +1,13 @@
-import { PostComment } from "../api/rule34vault";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import { PostComment } from "../api/rule34vault";
 
 // ══════════════════════════════════════════════════════════════════════
 // MASTER TOGGLE — set to true to enable spam filtering
 // ══════════════════════════════════════════════════════════════════════
 const SPAM_FILTER_ENABLED = false;
 
-const PUSH_SERVER_URL = Constants.expoConfig?.extra?.pushServerUrl || "https://push.lucario.click";
+const PUSH_SERVER_URL = Constants.expoConfig?.extra?.pushServerUrl || "";
 const BLOCKLIST_CACHE_KEY = "spam_blocklist_v1";
 const BLOCKLIST_ETAG_KEY = "spam_blocklist_etag";
 

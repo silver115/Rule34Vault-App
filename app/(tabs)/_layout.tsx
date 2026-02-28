@@ -172,6 +172,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="for-you"
+        options={{
+          title: "For You",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="heart-circle-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="search"
         options={{
           title: "Search",

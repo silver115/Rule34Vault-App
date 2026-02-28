@@ -1,42 +1,72 @@
 import * as FileSystem from "expo-file-system/legacy";
 import * as MediaLibrary from "expo-media-library";
 import { Platform, Alert } from "react-native";
-import * as Linking from "expo-linking";
+
+const ALBUM_NAME = "Rule34Vault";
+
+// Cache permission status so we only ask the OS once per session
+let _permissionGranted = false;
+
+async function ensurePermission(): Promise<boolean> {
+  if (_permissionGranted) return true;
+  const { status } = await MediaLibrary.requestPermissionsAsync();
+  if (status === "granted") {
+    _permissionGranted = true;
+    return true;
+  }
+  Alert.alert(
+    "Permission Required",
+    "Please grant media library access to save downloads."
+  );
+  return false;
+}
 
 /**
- * Download a media file and save it to the device's gallery.
- * Falls back to opening the URL in browser on web.
+ * Download a media file and save it to the device's Rule34Vault album.
+ * On web, triggers a browser download via blob + anchor tag.
  */
 export async function downloadMedia(url: string, filename: string): Promise<boolean> {
   if (Platform.OS === "web") {
-    Linking.openURL(url);
-    return true;
+    try {
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+      return true;
+    } catch (e) {
+      console.error("Download failed:", e);
+      return false;
+    }
   }
 
   try {
-    // Request permissions
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status !== "granted") {
-      Alert.alert(
-        "Permission Required",
-        "Please grant media library access to save downloads."
-      );
-      return false;
-    }
+    if (!(await ensurePermission())) return false;
 
-    // Download to cache
+    // Download to cache using legacy FileSystem API (reliable)
     const fileUri = `${FileSystem.cacheDirectory}${filename}`;
     const download = await FileSystem.downloadAsync(url, fileUri);
 
     if (download.status !== 200) {
+      Alert.alert("Download failed", `Server returned status ${download.status}`);
       return false;
     }
 
-    // Save to gallery
+    // saveToLibraryAsync avoids the secondary "modify photo" dialog on Android 10+
     await MediaLibrary.saveToLibraryAsync(download.uri);
+
+    // Clean up temp file
+    try { await FileSystem.deleteAsync(fileUri, { idempotent: true }); } catch {}
+
     return true;
-  } catch (e) {
+  } catch (e: any) {
     console.error("Download failed:", e);
+    Alert.alert("Download failed", e?.message || "An error occurred.");
     return false;
   }
 }

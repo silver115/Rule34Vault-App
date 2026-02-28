@@ -9,8 +9,8 @@ import {
   ActivityIndicator,
   Alert,
 } from "react-native";
-import { File as ExpoFile, Paths } from "expo-file-system";
-import * as MediaLibrary from "expo-media-library";
+import { downloadMedia } from "../utils/download";
+import { sendRecSignal } from "../utils/recommendations";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -38,7 +38,7 @@ export function onBrokenPostsChange(listener: () => void) {
   return () => { brokenListeners = brokenListeners.filter((l) => l !== listener); };
 }
 
-function markBroken(id: number) {
+export function markBroken(id: number) {
   if (brokenPostIds.has(id)) return;
   brokenPostIds.add(id);
   brokenListeners.forEach((l) => l());
@@ -129,7 +129,7 @@ function Thumbnail({ uri, fallbackUri, width, height, onFinalError }: { uri: str
 
 function PostCardInner({ post, index, onPress, badgeText, onBroken }: PostCardProps) {
   const router = useRouter();
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, token } = useAuth();
   const { colors } = useAppTheme();
   const { qualityOption } = useSettings();
   const { playlists, activePlaylist, setActivePlaylist, addPostToActive, removePostFromActive } = usePlaylist();
@@ -148,47 +148,9 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken }: PostCardPr
     try {
       const ext = isVideo ? "mp4" : "jpg";
       const fileName = `${post.id}.${ext}`;
-
-      if (Platform.OS === "web") {
-        const resp = await fetch(fullUrl);
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      } else {
-        const { status } = await MediaLibrary.requestPermissionsAsync();
-        if (status !== "granted") {
-          Alert.alert("Permission needed", "Storage permission is required to save files.");
-          setDownloading(false);
-          return;
-        }
-        // Download to cache using expo-file-system v19 API
-        const tempFile = new ExpoFile(Paths.cache, fileName);
-        const response = await fetch(fullUrl);
-        const blob = await response.blob();
-        const buffer = await blob.arrayBuffer();
-        tempFile.write(new Uint8Array(buffer));
-        // Save to media library under Rule34Vault album
-        const asset = await MediaLibrary.createAssetAsync(tempFile.uri);
-        let album = await MediaLibrary.getAlbumAsync("Rule34Vault");
-        if (album) {
-          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-        } else {
-          await MediaLibrary.createAlbumAsync("Rule34Vault", asset, false);
-        }
-        // Clean up temp file
-        try { tempFile.delete(); } catch {}
-        Alert.alert("Downloaded", `Saved to Rule34Vault/${fileName}`);
-      }
+      await downloadMedia(fullUrl, fileName);
     } catch (e: any) {
-      if (Platform.OS === "web") {
-        console.error("Download failed:", e);
-      } else {
+      if (Platform.OS !== "web") {
         Alert.alert("Download failed", e?.message || "An error occurred.");
       }
     } finally {
@@ -214,9 +176,10 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken }: PostCardPr
       } else {
         await api.likePost(post.id);
         setLiked(true);
+        if (token && post.tags) sendRecSignal(token, post.id, "like", post.tags);
       }
     } catch {}
-  }, [liked, post.id, isLoggedIn]);
+  }, [liked, post.id, isLoggedIn, token]);
 
   const handleBookmark = useCallback(async () => {
     if (!isLoggedIn) return;
@@ -227,9 +190,10 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken }: PostCardPr
       } else {
         await api.bookmarkPost(post.id);
         setBookmarked(true);
+        if (token && post.tags) sendRecSignal(token, post.id, "bookmark", post.tags);
       }
     } catch {}
-  }, [bookmarked, post.id, isLoggedIn]);
+  }, [bookmarked, post.id, isLoggedIn, token]);
 
   const handlePlaylistToggle = useCallback(async () => {
     if (!isLoggedIn) return;
