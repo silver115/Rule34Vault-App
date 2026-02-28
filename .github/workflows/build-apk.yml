@@ -15,11 +15,7 @@ jobs:
         node-version: '20'
         cache: 'npm'
     - run: npm ci
-    - uses: expo/expo-github-action@v10
-      with:
-        expo-version: latest
-        token: ${{ secrets.EXPO_TOKEN }}
-        packager: npm
+    - run: npm install -g @expo/eas-cli
     - run: eas build --platform android --profile preview --non-interactive
       env:
         EXPO_PUBLIC_REC_SERVER_URL: ${{ secrets.REC_SERVER_URL }}
