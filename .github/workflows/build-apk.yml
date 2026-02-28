@@ -15,7 +15,7 @@ jobs:
         node-version: '20'
         cache: 'npm'
     - run: npm ci
-    - uses: expo/expo-github-action@v11
+    - uses: expo/expo-github-action@v10
       with:
         expo-version: latest
         token: ${{ secrets.EXPO_TOKEN }}
