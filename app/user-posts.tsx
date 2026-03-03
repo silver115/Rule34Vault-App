@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
-import { View, Text, StyleSheet } from "react-native";
-import { useLocalSearchParams, Stack } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
+import React, { useEffect, useRef, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
 import api, { Post } from "../api/rule34vault";
 import { PostGrid } from "../components/PostGrid";
-import { useAuth } from "../contexts/AuthContext";
 import { Colors, FontSize, Spacing } from "../constants/theme";
+import { useAuth } from "../contexts/AuthContext";
+import { usePostList } from "../contexts/PostListContext";
 
 type PostType = "liked" | "bookmarked" | "super-liked";
 
@@ -17,6 +18,7 @@ const TITLES: Record<PostType, string> = {
 export default function UserPostsScreen() {
   const { type, userId: userIdParam, userName } = useLocalSearchParams<{ type: string; userId?: string; userName?: string }>();
   const { user } = useAuth();
+  const { setActionStates } = usePostList();
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -57,13 +59,25 @@ export default function UserPostsScreen() {
           return;
       }
 
+      const newItems = resp.items;
       if (refresh) {
-        setPosts(resp.items);
+        setPosts(newItems);
       } else {
-        setPosts((prev) => [...prev, ...resp.items]);
+        setPosts((prev) => [...prev, ...newItems]);
       }
       cursorRef.current = resp.cursor;
       hasMoreRef.current = !!resp.cursor;
+
+      // Pre-seed action states so PostGrid shows correct icons instantly
+      const seed: Record<number, { isLiked: boolean; isBookmarked: boolean; isSuperLiked: boolean }> = {};
+      for (const p of newItems) {
+        seed[p.id] = {
+          isLiked: postType === "liked" || postType === "super-liked",
+          isBookmarked: postType === "bookmarked",
+          isSuperLiked: postType === "super-liked",
+        };
+      }
+      setActionStates(seed);
     } catch (e) {
       console.error("Failed to load posts:", e);
     } finally {

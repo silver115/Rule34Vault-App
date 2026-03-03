@@ -4,18 +4,12 @@ const PROXY_URL = "http://localhost:3001";
 const DIRECT_URL = "https://rule34vault.com";
 const CDN_URL = "https://r34xyz.b-cdn.net";
 
-function getBaseUrl(): string {
-  // Native apps (Android/iOS) hit the API directly — no CORS issues
-  // Web uses localhost proxy to avoid CORS
-  if (Platform.OS === "web") {
-    return PROXY_URL;
-  }
-  return DIRECT_URL;
-}
+// Cached at module init — Platform.OS never changes at runtime
+const BASE_URL = Platform.OS === "web" ? PROXY_URL : DIRECT_URL;
+const API_URL = `${BASE_URL}/api/v2`;
 
-function getApiUrl(): string {
-  return `${getBaseUrl()}/api/v2`;
-}
+function getBaseUrl(): string { return BASE_URL; }
+function getApiUrl(): string { return API_URL; }
 
 export const POST_TYPE: Record<number, string> = { 0: "image", 1: "video" };
 export const TAG_TYPE: Record<number, string> = {
@@ -291,7 +285,7 @@ class Rule34VaultAPI {
     const cached = postCache.get(postId);
     if (cached) return cached;
     const post = await this.get<Post>(`/post/${postId}`);
-    postCache.set(postId, post);
+    cacheSet(postId, post);
     return post;
   }
 
@@ -309,7 +303,7 @@ class Rule34VaultAPI {
         const fetched = await Promise.all(
           chunk.map((id) =>
             this.get<Post>(`/post/${id}`)
-              .then((p) => { postCache.set(id, p); return p; })
+              .then((p) => { cacheSet(id, p); return p; })
               .catch(() => null)
           )
         );
@@ -353,23 +347,19 @@ class Rule34VaultAPI {
     const body: Record<string, unknown> = { take, includeTags: tags };
     if (cursor) body.cursor = cursor;
     if (filters?.type != null) body.type = filters.type;
-    return this.post<PaginatedResponse<Post>>("/post/search/root", body);
-  }
-
-  async prefetchPages(
-    count: number,
-    filters?: SearchFilters
-  ): Promise<PaginatedResponse<Post>[]> {
-    const pages: PaginatedResponse<Post>[] = [];
-    let cursor: string | null = null;
-    for (let i = 0; i < count; i++) {
-      const page = await this.searchPosts(30, cursor, filters);
-      pages.push(page);
-      page.items.forEach((p) => postCache.set(p.id, p));
-      cursor = page.cursor;
-      if (!cursor) break;
+    
+    // Handle time-based filtering
+    if (filters?.postedFromDays != null && filters.postedFromDays > 0) {
+      body.postedFromDays = filters.postedFromDays;
+      // Sort by likes for time-based filters (Daily, Weekly, Monthly)
+      body.sortBy = 1;
+    } else if (filters?.postedFromDays === 999) {
+      // All Time - sort by likes, no time filter
+      body.sortBy = 1;
     }
-    return pages;
+    // Default (-1) - no sortBy parameter for normal layout like main page
+    
+    return this.post<PaginatedResponse<Post>>("/post/search/root", body);
   }
 
   async searchPostsByPlaylist(
@@ -502,9 +492,34 @@ class Rule34VaultAPI {
     excludeIds?: Set<number>
   ): Promise<{ items: Post[]; topTags: string[] }> {
     const fallback = async (): Promise<{ items: Post[]; topTags: string[] }> => {
-      const data = await this.searchPosts(take, cursor, { sortBy: 1 });
-      fyShuffleWindow(data.items, 5);
-      return { items: data.items.slice(0, take), topTags: [] };
+      // Try multiple search strategies for more variety
+      const strategies = [
+        // Strategy 1: Recent posts
+        () => this.searchPosts(take, cursor, { sortBy: 1 }),
+        // Strategy 2: Popular posts
+        () => this.searchPosts(take, cursor, { sortBy: 2 }),
+        // Strategy 3: Random posts
+        () => this.searchPosts(take, cursor, { sortBy: 3 }),
+      ];
+
+      for (const strategy of strategies) {
+        try {
+          const data = await strategy();
+          // Filter out already seen posts
+          const fresh = data.items.filter(p => !excludeIds?.has(p.id));
+          if (fresh.length > 0) {
+            fyShuffleWindow(fresh, 5);
+            return { items: fresh.slice(0, take), topTags: [] };
+          }
+        } catch {
+          continue;
+        }
+      }
+
+      // Last resort: return any posts even if seen
+      const lastResort = await this.searchPosts(take, cursor, { sortBy: 1 });
+      fyShuffleWindow(lastResort.items, 5);
+      return { items: lastResort.items.slice(0, take), topTags: [] };
     };
 
     try {
@@ -599,24 +614,27 @@ class Rule34VaultAPI {
       };
 
       // ── Phase 7: Merge with diversity caps ──
-      // Pool ratios: A=50%, B=30%, C=20%
-      const coreMax  = Math.ceil(take * 0.50);
-      const discMax  = Math.ceil(take * 0.30);
+      // Pool ratios: A=40%, B=35%, C=25% (more diversity)
+      const coreMax  = Math.ceil(take * 0.40);
+      const discMax  = Math.ceil(take * 0.35);
       const trendMax = Math.ceil(take * 0.25);
 
       const globalSeen = new Set(seenIds);
 
-      const pickFromPool = (pool: Post[], max: number): Post[] => {
-        // Score, take top 2x candidates, shuffle them, then pick max
+      const pickFromPool = (pool: Post[], max: number, allowDuplicates = false): Post[] => {
+        // If we're running out of fresh content, relax the seen filter
+        const freshFilter = allowDuplicates ? (p: Post) => true : (p: Post) => !globalSeen.has(p.id);
+        
+        // Score, take top 3x candidates for more variety, shuffle them, then pick max
         const candidates = pool
-          .filter((p) => !globalSeen.has(p.id))
+          .filter(freshFilter)
           .map((p) => ({ post: p, score: scorePost(p) }))
           .sort((a, b) => b.score - a.score)
-          .slice(0, max * 2);
+          .slice(0, max * 3); // Increased from 2x to 3x for more variety
         fyShuffleAll(candidates);
         const picked: Post[] = [];
         for (const { post } of candidates) {
-          if (!globalSeen.has(post.id) && picked.length < max) {
+          if (picked.length < max) {
             picked.push(post);
             globalSeen.add(post.id);
           }
@@ -624,9 +642,24 @@ class Rule34VaultAPI {
         return picked;
       };
 
-      const coreItems  = pickFromPool(poolA, coreMax);
-      const discItems  = pickFromPool(poolB, discMax);
-      const trendItems = pickFromPool(poolC, trendMax);
+      // First try with strict filtering
+      let coreItems  = pickFromPool(poolA, coreMax);
+      let discItems  = pickFromPool(poolB, discMax);
+      let trendItems = pickFromPool(poolC, trendMax);
+
+      // If we don't have enough content, relax the filters
+      const totalItems = coreItems.length + discItems.length + trendItems.length;
+      if (totalItems < take * 0.7) {
+        // Allow some duplicates from trending pool
+        const additionalTrend = pickFromPool(poolC, trendMax, true);
+        trendItems = [...trendItems, ...additionalTrend].slice(0, trendMax);
+        
+        // If still not enough, add more from discovery pool
+        if (coreItems.length + discItems.length + trendItems.length < take * 0.8) {
+          const additionalDisc = pickFromPool(poolB, discMax, true);
+          discItems = [...discItems, ...additionalDisc].slice(0, discMax);
+        }
+      }
 
       // ── Phase 8: Interleave pools A/B/C then light-shuffle ──
       const interleaved = fyInterleave(coreItems, discItems, trendItems);
@@ -758,11 +791,16 @@ const PARALLEL_LIMIT = 10;
 
 const postCache = new Map<number, Post>();
 
-function evictCache() {
+function cacheSet(id: number, post: Post) {
+  postCache.set(id, post);
   if (postCache.size > CACHE_MAX) {
-    const keys = [...postCache.keys()];
-    for (let i = 0; i < keys.length - CACHE_MAX; i++) {
-      postCache.delete(keys[i]);
+    // Evict oldest entries (Map preserves insertion order)
+    const excess = postCache.size - CACHE_MAX;
+    const iter = postCache.keys();
+    for (let i = 0; i < excess; i++) {
+      const { value, done } = iter.next();
+      if (done) break;
+      postCache.delete(value);
     }
   }
 }

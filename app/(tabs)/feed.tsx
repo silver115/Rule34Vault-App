@@ -1,20 +1,19 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ActivityIndicator,
-  ScrollView,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter, useFocusEffect } from "expo-router";
 import * as Notifications from "expo-notifications";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View
+} from "react-native";
 import api, { Post, Tag } from "../../api/rule34vault";
 import { PostGrid } from "../../components/PostGrid";
+import { Colors, FontSize, Radius, Spacing } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { useFeedCount } from "../../contexts/FeedCountContext";
-import { Colors, Radius, Spacing, FontSize } from "../../constants/theme";
 import { useAppTheme } from "../../contexts/ThemeContext";
 
 export default function FeedScreen() {
@@ -85,7 +84,10 @@ export default function FeedScreen() {
 
   function enrichPostsInBackground(items: Post[], subTags: Tag[], refresh: boolean) {
     const subTagIds = new Set(subTags.map((t) => t.id));
-    api.getPostsBatch(items.map((p) => p.id)).then((detailed) => {
+    // Only fetch posts that are missing tag data to avoid redundant API calls
+    const needsEnrich = items.filter((p) => !p.tags || p.tags.length === 0);
+    if (needsEnrich.length === 0) return;
+    api.getPostsBatch(needsEnrich.map((p) => p.id)).then((detailed) => {
       const detailMap = new Map(detailed.map((p) => [p.id, p]));
       const enriched = items.map((p) => detailMap.get(p.id) ?? p);
       const newBadges = new Map<number, string>();

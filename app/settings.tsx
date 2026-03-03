@@ -1,27 +1,27 @@
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  Switch,
-  Alert,
-  Platform,
-  Modal,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useAuth } from "../contexts/AuthContext";
-import { Radius, Spacing, FontSize } from "../constants/theme";
-import { useAppTheme, THEMES, ThemeName } from "../contexts/ThemeContext";
-import { useSettings, QUALITY_OPTIONS, PreviewQuality, ViewingMode } from "../contexts/SettingsContext";
+import React, { useEffect, useState } from "react";
 import {
-  getNotificationPref,
-  setNotificationPref,
-  registerForPushNotifications,
-  registerWithPushServer,
-  unregisterFromPushServer,
+    Alert,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Switch,
+    Text,
+    View
+} from "react-native";
+import { FontSize, Radius, Spacing } from "../constants/theme";
+import { useAuth } from "../contexts/AuthContext";
+import { PreviewQuality, QUALITY_OPTIONS, ScrollMode, ViewingMode, useSettings } from "../contexts/SettingsContext";
+import { ACCENT_COLORS, AccentColor, THEMES, ThemeName, useAppTheme } from "../contexts/ThemeContext";
+import {
+    getNotificationPref,
+    registerForPushNotifications,
+    registerWithPushServer,
+    setNotificationPref,
+    unregisterFromPushServer,
 } from "../utils/notifications";
 
 const THEME_KEYS = Object.keys(THEMES) as ThemeName[];
@@ -30,13 +30,16 @@ const QUALITY_KEYS = Object.keys(QUALITY_OPTIONS) as PreviewQuality[];
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, token: authToken, isLoggedIn, logout } = useAuth();
-  const { themeName, colors, setTheme } = useAppTheme();
-  const { previewQuality, qualityOption, setPreviewQuality, viewingMode, setViewingMode } = useSettings();
+  const { themeName, colors, setTheme, accentColor, setAccent } = useAppTheme();
+  const { previewQuality, qualityOption, setPreviewQuality, viewingMode, setViewingMode, scrollMode, setScrollMode } = useSettings();
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
+  const [accentDropdownOpen, setAccentDropdownOpen] = useState(false);
   const [qualityDropdownOpen, setQualityDropdownOpen] = useState(false);
   const [viewModeOpen, setViewModeOpen] = useState(false);
+  const [scrollModeOpen, setScrollModeOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
     getNotificationPref().then(setPushEnabled).catch(() => {});
@@ -57,9 +60,10 @@ export default function SettingsScreen() {
         }
         // Register with push server
         if (pushToken && authToken) {
-          const ok = await registerWithPushServer(pushToken, authToken);
-          if (!ok) {
-            Alert.alert("Error", "Failed to register with notification server. Try again later.");
+          const result = await registerWithPushServer(pushToken, authToken);
+          if (!result.ok) {
+            const detail = result.error ? `\n\n${result.error}` : "";
+            Alert.alert("Error", `Failed to register with notification server. Try again later.${detail}`);
             return;
           }
         }
@@ -174,6 +178,75 @@ export default function SettingsScreen() {
           </Pressable>
         </Modal>
 
+        {/* Accent Color Section */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Personalization</Text>
+        <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
+          <Pressable
+            style={[styles.row, { borderBottomColor: colors.border }]}
+            onPress={() => setAccentDropdownOpen(true)}
+          >
+            <Ionicons name="color-palette-outline" size={20} color={colors.textSecondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>Accent Color</Text>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+                {ACCENT_COLORS[accentColor].label} — Customize app colors
+              </Text>
+            </View>
+            <View style={[styles.accentPreview, { backgroundColor: colors.accent }]} />
+          </Pressable>
+        </View>
+
+        {/* Accent Color Picker Modal */}
+        <Modal
+          visible={accentDropdownOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setAccentDropdownOpen(false)}
+        >
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setAccentDropdownOpen(false)}
+          >
+            <View style={[styles.modalContent, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Choose Accent Color</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
+                Personalize your app's look
+              </Text>
+              {(Object.keys(ACCENT_COLORS) as AccentColor[]).map((color) => {
+                const accent = ACCENT_COLORS[color];
+                const isActive = color === accentColor;
+                return (
+                  <Pressable
+                    key={color}
+                    style={[
+                      styles.themeOption,
+                      { borderColor: colors.border },
+                      isActive && { borderColor: accent.color, backgroundColor: accent.color + "15" },
+                    ]}
+                    onPress={() => {
+                      setAccent(color);
+                      setAccentDropdownOpen(false);
+                    }}
+                  >
+                    <View style={styles.accentIconWrap}>
+                      <View style={[styles.accentPreview, { backgroundColor: accent.color }]} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.themeLabel, { color: colors.text }]}>
+                        {accent.label}
+                        {isActive ? "  ✓" : ""}
+                      </Text>
+                      <Text style={[styles.themeSub, { color: colors.textMuted }]}>
+                        {accent.color.toUpperCase()}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Modal>
+
         {/* Viewing Mode Section */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Browsing</Text>
         <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
@@ -181,11 +254,11 @@ export default function SettingsScreen() {
             style={[styles.row, { borderBottomColor: colors.border }]}
             onPress={() => setViewModeOpen(true)}
           >
-            <Ionicons name={viewingMode === "feed" ? "phone-portrait-outline" : "grid-outline"} size={20} color={colors.textSecondary} />
+            <Ionicons name={viewingMode === "tiktok" ? "phone-portrait-outline" : "grid-outline"} size={20} color={colors.textSecondary} />
             <View style={{ flex: 1 }}>
               <Text style={[styles.rowLabel, { color: colors.text }]}>Viewing Mode</Text>
               <Text style={[styles.rowSub, { color: colors.textMuted }]}>
-                {viewingMode === "grid" ? "Grid — Classic thumbnail grid" : "Feed — TikTok-style vertical scroll"}
+                {viewingMode === "grid" ? "Grid — Classic thumbnail grid" : "TikTok — Full-screen swipe player"}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
@@ -208,13 +281,13 @@ export default function SettingsScreen() {
               <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
                 Choose how you browse posts
               </Text>
-              {(["grid", "feed"] as ViewingMode[]).map((mode) => {
+              {(["grid", "tiktok"] as ViewingMode[]).map((mode) => {
                 const isActive = viewingMode === mode;
                 const icon = mode === "grid" ? "grid-outline" : "phone-portrait-outline";
-                const label = mode === "grid" ? "Grid" : "Feed";
+                const label = mode === "grid" ? "Grid" : "TikTok";
                 const desc = mode === "grid"
-                  ? "Classic thumbnail grid with tap to open"
-                  : "Full-screen vertical scroll, double-tap to like";
+                  ? "Classic thumbnail grid — tap any post to open full-screen TikTok player"
+                  : "Full-screen vertical swipe with modern video player and scrubber";
                 return (
                   <Pressable
                     key={mode}
@@ -226,6 +299,80 @@ export default function SettingsScreen() {
                     onPress={() => {
                       setViewingMode(mode);
                       setViewModeOpen(false);
+                    }}
+                  >
+                    <View style={styles.qualityIconWrap}>
+                      <Ionicons
+                        name={icon}
+                        size={20}
+                        color={isActive ? colors.accent : colors.textSecondary}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.themeLabel, { color: colors.text }]}>
+                        {label}
+                        {isActive ? "  ✓" : ""}
+                      </Text>
+                      <Text style={[styles.themeSub, { color: colors.textMuted }]}>{desc}</Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </Pressable>
+        </Modal>
+
+        {/* Scroll Mode Section */}
+        <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
+          <Pressable
+            style={[styles.row, { borderBottomColor: colors.border }]}
+            onPress={() => setScrollModeOpen(true)}
+          >
+            <Ionicons name={scrollMode === "tiktok" ? "phone-portrait-outline" : "list-outline"} size={20} color={colors.textSecondary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>Scroll Mode</Text>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+                {scrollMode === "default" ? "Default — Standard scrolling behavior" : "TikTok — Full-screen vertical swipe"}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+          </Pressable>
+        </View>
+
+        {/* Scroll Mode Picker Modal */}
+        <Modal
+          visible={scrollModeOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setScrollModeOpen(false)}
+        >
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setScrollModeOpen(false)}
+          >
+            <View style={[styles.modalContent, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>Scroll Mode</Text>
+              <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
+                Choose how you scroll through posts (For You tab only)
+              </Text>
+              {(["default", "tiktok"] as ScrollMode[]).map((mode) => {
+                const isActive = scrollMode === mode;
+                const icon = mode === "default" ? "list-outline" : "phone-portrait-outline";
+                const label = mode === "default" ? "Default" : "TikTok";
+                const desc = mode === "default"
+                  ? "Standard scrolling with grid and feed views"
+                  : "Full-screen vertical swipe with modern video player";
+                return (
+                  <Pressable
+                    key={mode}
+                    style={[
+                      styles.themeOption,
+                      { borderColor: colors.border },
+                      isActive && { borderColor: colors.accent, backgroundColor: colors.accent + "15" },
+                    ]}
+                    onPress={() => {
+                      setScrollMode(mode);
+                      setScrollModeOpen(false);
                     }}
                   >
                     <View style={styles.qualityIconWrap}>
@@ -501,5 +648,18 @@ const styles = StyleSheet.create({
   qualityDetail: {
     fontSize: 10,
     marginTop: 3,
+  },
+  accentPreview: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+  },
+  accentIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    justifyContent: "center",
+    alignItems: "center",
   },
 });

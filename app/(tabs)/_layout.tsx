@@ -1,21 +1,14 @@
-import React from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
-import { Tabs, useRouter, usePathname } from "expo-router";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
-import { Colors, Spacing, Radius } from "../../constants/theme";
+import { Image } from "expo-image";
+import { Tabs, usePathname, useRouter } from "expo-router";
+import React from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { getAvatarUrl } from "../../api/rule34vault";
+import { Colors, Spacing } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { useFeedCount } from "../../contexts/FeedCountContext";
+import { useSettings } from "../../contexts/SettingsContext";
 import { useAppTheme } from "../../contexts/ThemeContext";
-
-function getAvatarUrl(userId: number, avatarModifyDate?: string, size = 128): string {
-  const s = size >= 128 ? 256 : 128;
-  if (avatarModifyDate) {
-    const v = new Date(avatarModifyDate).getTime();
-    return `https://rule34vault.com/users/${userId}/avatar-${s}.jpg?v=${v}`;
-  }
-  return "";
-}
 
 function HeaderRight() {
   const router = useRouter();
@@ -101,9 +94,6 @@ const headerStyles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
   },
-  iconBtnActive: {
-    backgroundColor: Colors.bgTertiary,
-  },
   avatarBtn: {
     width: 34,
     height: 34,
@@ -111,9 +101,6 @@ const headerStyles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "transparent",
     overflow: "hidden",
-  },
-  avatarBtnActive: {
-    borderColor: Colors.accent,
   },
   avatar: {
     width: 30,
@@ -132,6 +119,11 @@ const headerStyles = StyleSheet.create({
 
 export default function TabLayout() {
   const { colors } = useAppTheme();
+  const { scrollMode } = useSettings();
+  const pathname = usePathname();
+
+  const isForYouActive = pathname === "/(tabs)/for-you";
+  const isTiktokMode = scrollMode === "tiktok";
 
   return (
     <Tabs
@@ -144,14 +136,18 @@ export default function TabLayout() {
           borderTopWidth: 1,
           height: 56,
           paddingBottom: 6,
+          // Keep bottom nav visible in TikTok mode
         },
         tabBarItemStyle: {
           flex: 1,
         },
-        headerStyle: { backgroundColor: colors.bgSecondary },
+        headerStyle: { 
+          backgroundColor: colors.bgSecondary,
+          display: (isForYouActive && isTiktokMode) ? "none" : "flex",
+        },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: "700" },
-        headerRight: () => <HeaderRight />,
+        headerRight: () => (isForYouActive && isTiktokMode) ? null : <HeaderRight />,
       }}
     >
       <Tabs.Screen

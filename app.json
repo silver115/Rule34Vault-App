@@ -46,8 +46,8 @@
     },
     "extra": {
       "router": {},
-      "pushServerUrl": "",
-      "recServerUrl": "",
+      "pushServerUrl": "https://push.lucario.click",
+      "recServerUrl": "https://rec.lucario.click",
       "eas": {
         "projectId": "5828ad87-fb90-40c2-9ee1-e520b39d8a10"
       }

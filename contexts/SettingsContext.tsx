@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Platform } from "react-native";
 
 // ── Preview Quality Definitions ─────────────────────────────────────
@@ -8,7 +8,8 @@ import { Platform } from "react-native";
 //   high   — full images in grid + detail view
 
 export type PreviewQuality = "low" | "medium" | "high";
-export type ViewingMode = "grid" | "feed";
+export type ViewingMode = "grid" | "tiktok";
+export type ScrollMode = "default" | "tiktok";
 
 export interface QualityOption {
   key: PreviewQuality;
@@ -50,6 +51,7 @@ export const QUALITY_OPTIONS: Record<PreviewQuality, QualityOption> = {
 
 const QUALITY_KEY = "preview_quality";
 const VIEWING_MODE_KEY = "viewing_mode";
+const SCROLL_MODE_KEY = "scroll_mode";
 
 const storage = {
   async getItem(key: string): Promise<string | null> {
@@ -77,26 +79,35 @@ interface SettingsState {
   setPreviewQuality: (q: PreviewQuality) => void;
   viewingMode: ViewingMode;
   setViewingMode: (m: ViewingMode) => void;
+  scrollMode: ScrollMode;
+  setScrollMode: (m: ScrollMode) => void;
 }
 
 const SettingsContext = createContext<SettingsState>({
   previewQuality: "medium",
   qualityOption: QUALITY_OPTIONS.medium,
   setPreviewQuality: () => {},
-  viewingMode: "grid",
+  viewingMode: "grid" as ViewingMode,
   setViewingMode: () => {},
+  scrollMode: "default",
+  setScrollMode: () => {},
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [quality, setQuality] = useState<PreviewQuality>("medium");
   const [viewingMode, setViewingModeState] = useState<ViewingMode>("grid");
+  const [scrollMode, setScrollModeState] = useState<ScrollMode>("default");
 
   useEffect(() => {
     storage.getItem(QUALITY_KEY).then((val) => {
       if (val && val in QUALITY_OPTIONS) setQuality(val as PreviewQuality);
     }).catch(() => {});
     storage.getItem(VIEWING_MODE_KEY).then((val) => {
-      if (val === "grid" || val === "feed") setViewingModeState(val);
+      if (val === "grid" || val === "tiktok") setViewingModeState(val);
+      else if (val === "feed") setViewingModeState("tiktok"); // migrate old stored value
+    }).catch(() => {});
+    storage.getItem(SCROLL_MODE_KEY).then((val) => {
+      if (val === "default" || val === "tiktok") setScrollModeState(val);
     }).catch(() => {});
   }, []);
 
@@ -110,6 +121,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     storage.setItem(VIEWING_MODE_KEY, m).catch(() => {});
   }, []);
 
+  const setScrollMode = useCallback((m: ScrollMode) => {
+    setScrollModeState(m);
+    storage.setItem(SCROLL_MODE_KEY, m).catch(() => {});
+  }, []);
+
   return (
     <SettingsContext.Provider
       value={{
@@ -118,6 +134,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
         setPreviewQuality,
         viewingMode,
         setViewingMode,
+        scrollMode,
+        setScrollMode,
       }}
     >
       {children}

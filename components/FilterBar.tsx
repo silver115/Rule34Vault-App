@@ -1,15 +1,15 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
-import {
-  View,
-  Text,
-  Pressable,
-  TextInput,
-  StyleSheet,
-  ScrollView,
-} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import api, { SearchFilters, Tag } from "../api/rule34vault";
-import { Colors, Radius, Spacing, FontSize, getTagColor } from "../constants/theme";
+import { Colors, FontSize, getTagColor, Radius, Spacing } from "../constants/theme";
 
 interface FilterBarProps {
   filters: SearchFilters;
@@ -25,7 +25,7 @@ const TYPE_OPTIONS = [
 
 const HOT_RANGE_OPTIONS = [
   { label: "Default", value: -1, icon: "list" as const },
-  { label: "All Time", value: 0, icon: "infinite" as const },
+  { label: "All Time", value: 999, icon: "infinite" as const },
   { label: "Daily", value: 1, icon: "today" as const },
   { label: "Weekly", value: 7, icon: "calendar" as const },
   { label: "Monthly", value: 30, icon: "calendar-outline" as const },

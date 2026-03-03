@@ -1,55 +1,58 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import {
-  View,
-  Text,
-  ScrollView,
-  FlatList,
-  StyleSheet,
-  Pressable,
-  ActivityIndicator,
-  useWindowDimensions,
-  Linking,
-  Platform,
-  StatusBar,
-} from "react-native";
-import { Image } from "expo-image";
-import { Video, ResizeMode } from "expo-av";
-import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { ResizeMode, Video } from "expo-av";
+import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+    ActivityIndicator,
+    FlatList,
+    Linking,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    View
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import api, {
-  Post,
-  PostActionState,
-  Tag,
-  getMediaUrl,
-  TAG_TYPE,
+    getMediaUrl,
+    Post,
+    PostActionState,
+    SearchFilters,
+    Tag,
+    TAG_TYPE
 } from "../../api/rule34vault";
+import { FilterBar } from "../../components/FilterBar";
 import { TagChip } from "../../components/TagChip";
+import { ZoomableImage } from "../../components/ZoomableImage";
+import { Colors, FontSize, getTagColor, Radius, Spacing } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePostList } from "../../contexts/PostListContext";
 import { useSettings } from "../../contexts/SettingsContext";
-import { Colors, Radius, Spacing, FontSize, getTagColor } from "../../constants/theme";
 import { downloadMedia } from "../../utils/download";
-import { sendRecSignal, sendViewDuration, hasRecServer } from "../../utils/recommendations";
+import { sendRecSignal, sendViewDuration } from "../../utils/recommendations";
 
 const PREFETCH_COUNT = 5;
 
 export default function PostDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const { posts: contextPosts } = usePostList();
+  const { postIds: contextPostIds } = usePostList();
   const { width: SCREEN_W, height: SCREEN_H } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const startId = Number(id);
 
   const postIds = useMemo(() => {
-    if (contextPosts.length > 0) {
-      const ids = contextPosts.map((p) => p.id);
-      if (!ids.includes(startId)) return [startId];
-      return ids;
+    if (contextPostIds.length > 0) {
+      if (!contextPostIds.includes(startId)) return [startId];
+      return contextPostIds;
     }
     return [startId];
-  }, [startId, contextPosts]);
+  }, [startId, contextPostIds]);
 
   const startIndex = postIds.indexOf(startId);
   const pagerRef = useRef<FlatList>(null);
@@ -102,10 +105,11 @@ export default function PostDetailScreen() {
           isActive={item === activePostId}
           isMuted={isMuted}
           onToggleMute={toggleMute}
+          postIds={postIds}
         />
       </View>
     ),
-    [SCREEN_W, SCREEN_H, mediaH, insets.top, activePostId, isMuted, toggleMute]
+    [SCREEN_W, SCREEN_H, mediaH, insets.top, activePostId, isMuted, toggleMute, postIds]
   );
 
   return (
@@ -124,8 +128,9 @@ export default function PostDetailScreen() {
           offset: SCREEN_W * index,
           index,
         })}
-        windowSize={5}
-        maxToRenderPerBatch={3}
+        windowSize={3}
+        initialNumToRender={1}
+        maxToRenderPerBatch={2}
         removeClippedSubviews={Platform.OS !== "web"}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
@@ -147,6 +152,7 @@ function PostPage({
   isActive,
   isMuted,
   onToggleMute,
+  postIds,
 }: {
   postId: number;
   screenW: number;
@@ -156,23 +162,132 @@ function PostPage({
   isActive: boolean;
   isMuted: boolean;
   onToggleMute: () => void;
+  postIds: number[];
 }) {
   const { isLoggedIn, token } = useAuth();
   const { qualityOption } = useSettings();
+  const { actionStates: ctxActionStates, updateActionState: ctxUpdateActionState } = usePostList();
   const router = useRouter();
   const [post, setPost] = useState<Post | null>(null);
-  const [actionState, setActionState] = useState<PostActionState | null>(null);
+  // Seed from context cache if already known (e.g. came from grid/TikTok view)
+  const [actionState, setActionState] = useState<PostActionState>(
+    ctxActionStates[postId] ?? { isLiked: false, isBookmarked: false, isSuperLiked: false }
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [mediaError, setMediaError] = useState(false);
   const [similarPosts, setSimilarPosts] = useState<Post[]>([]);
+  const [filters, setFilters] = useState<SearchFilters>({});
   const [videoPlaying, setVideoPlaying] = useState(false);
+  const [thumbLoaded, setThumbLoaded] = useState(false);
+  const [actionStateLoading, setActionStateLoading] = useState(false);
+  const [comicOpen, setComicOpen] = useState(false);
   const videoRef = useRef<any>(null);
   const webVideoRef = useRef<HTMLVideoElement | null>(null);
   const scrollRef = useRef<ScrollView>(null);
+  const [mediaRetryCount, setMediaRetryCount] = useState(0);
+  const [mediaLoadingState, setMediaLoadingState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const MAX_RETRIES = 2;
+  const MEDIA_TIMEOUT = 15000; // 15 seconds
 
   // View duration tracking for rec server
   const viewStartRef = useRef<number>(0);
   const sentDurationRef = useRef(false);
+
+  // Optimized media URL generation
+  const mediaUrl = useMemo(() => {
+    if (!post) return "";
+    return getMediaUrl(post, "full", true);  // Use CDN URL
+  }, [post]);
+
+  // Media loading timeout and retry logic
+  useEffect(() => {
+    if (!post || mediaLoadingState === 'loaded' || mediaLoadingState === 'failed') return;
+
+    const timeout = setTimeout(() => {
+      if (mediaLoadingState === 'loading') {
+        handleMediaFailure();
+      }
+    }, MEDIA_TIMEOUT);
+
+    return () => clearTimeout(timeout);
+  }, [post, mediaLoadingState, mediaRetryCount]);
+
+  const handleMediaFailure = useCallback(() => {
+    if (mediaRetryCount < MAX_RETRIES) {
+      const delay = 1000 * Math.pow(2, mediaRetryCount);
+      setTimeout(() => {
+        setMediaRetryCount(prev => prev + 1);
+        setMediaLoadingState('loading');
+        setMediaError(false);
+      }, delay);
+    } else {
+      setMediaLoadingState('failed');
+    }
+  }, [mediaRetryCount]);
+
+  const handleMediaSuccess = useCallback(() => {
+    setMediaLoadingState('loaded');
+    setMediaRetryCount(0);
+  }, []);
+
+  // Apply filters to similar posts
+  const filteredSimilarPosts = useMemo(() => {
+    let filtered = [...similarPosts];
+    
+    // Filter by type
+    if (filters.type != null) {
+      filtered = filtered.filter(p => p.type === filters.type);
+    }
+    
+    // Filter by hot range (postedFromDays)
+    if (filters.postedFromDays != null && filters.postedFromDays > 0) {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - filters.postedFromDays);
+      filtered = filtered.filter(p => {
+        const postDate = new Date(p.created);
+        return postDate >= cutoffDate;
+      });
+    }
+    // Note: 999 (All Time) and -1 (Default) don't need time filtering
+    
+    return filtered;
+  }, [similarPosts, filters]);
+
+  const thumbUrl = useMemo(() => {
+    if (!post) return "";
+    return getMediaUrl(post, "thumb", true);
+  }, [post]);
+
+  // Video poster URL with 3-second timestamp (for web)
+  const videoPosterUrl = useMemo(() => {
+    if (!post || post.type !== 1) return "";
+    const baseUrl = getMediaUrl(post, "full", true);
+    // Add #t=3 to seek to 3 seconds for poster
+    return `${baseUrl}#t=3`;
+  }, [post]);
+
+  // Preload next/previous videos for instant playback (web only — uses DOM link injection)
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (!isActive || !post || post.type !== 1) return;
+    
+    const currentIndex = postIds.indexOf(post.id);
+    const nextIds = [
+      postIds[currentIndex - 1],
+      postIds[currentIndex + 1],
+    ].filter(Boolean).slice(0, 2);
+
+    const links: HTMLLinkElement[] = [];
+    nextIds.forEach(id => {
+      const link = document.createElement('link');
+      link.rel = 'preload';
+      link.as = 'image';
+      link.href = getMediaUrl({ id, type: 1 } as any, 'thumb', true);
+      document.head.appendChild(link);
+      links.push(link);
+    });
+    return () => { links.forEach(l => l.parentNode?.removeChild(l)); };
+  }, [isActive, post, postIds]);
 
   useEffect(() => {
     if (isActive) {
@@ -184,6 +299,14 @@ function PostPage({
       sendViewDuration(token, postId, durationSec, post.tags);
     }
   }, [isActive]);
+
+  // Reset thumb loading when post changes
+  useEffect(() => {
+    setThumbLoaded(false);
+    setMediaError(false);
+    setVideoPlaying(false);
+    setActionStateLoading(false);
+  }, [postId]);
 
   // Send view duration on unmount
   useEffect(() => {
@@ -236,19 +359,47 @@ function PostPage({
 
   // Web: capture mouse wheel to scroll the nested ScrollView
   useEffect(() => {
-    if (Platform.OS !== "web" || !scrollRef.current) return;
-    const node = (scrollRef.current as any)?.getScrollableNode?.() ||
-                 (scrollRef.current as any)?._nativeRef?.current;
-    if (!node) return;
-    const handler = (e: WheelEvent) => {
-      e.preventDefault();
-      node.scrollTop += e.deltaY;
+    if (Platform.OS !== "web") return;
+    
+    const handler = (e: Event) => {
+      const wheelEvent = e as WheelEvent;
+      wheelEvent.preventDefault();
+      wheelEvent.stopPropagation();
+      
+        // Try to find a scrollable element
+      let scrolled = false;
+      
+      // Method 1: Try any element with scrollable content
+      const elements = document.querySelectorAll('*');
+      for (let i = 0; i < elements.length; i++) {
+        const element = elements[i] as HTMLElement;
+        if (element.scrollHeight > element.clientHeight) {
+          const oldScrollTop = element.scrollTop;
+          element.scrollTop += wheelEvent.deltaY;
+          
+          if (element.scrollTop !== oldScrollTop) {
+            scrolled = true;
+            break;
+          }
+        }
+      }
+      
+      // Method 2: Fallback to window scroll
+      if (!scrolled) {
+        window.scrollBy(0, wheelEvent.deltaY);
+      }
     };
-    node.addEventListener("wheel", handler, { passive: false });
-    return () => node.removeEventListener("wheel", handler);
-  });
+    
+    // Add event listeners for web only
+    window.addEventListener("wheel", handler, { passive: false, capture: true });
+    document.addEventListener("wheel", handler, { passive: false, capture: true });
+    
+    return () => {
+      window.removeEventListener("wheel", handler, { capture: true } as any);
+      document.removeEventListener("wheel", handler, { capture: true } as any);
+    };
+  }, []);
 
-  // Cleanup video on unmount
   useEffect(() => {
     return () => {
       try {
@@ -273,17 +424,29 @@ function PostPage({
         if (!cancelled) setPost(data);
         if (isLoggedIn) {
           try {
+            setActionStateLoading(true);
             const state = await api.getPostActionState(postId);
-            if (!cancelled) setActionState(state);
-          } catch {}
+            if (!cancelled) {
+              setActionState(state);
+              ctxUpdateActionState(postId, state);
+            }
+          } catch {
+            // Retry once after a short delay
+            setTimeout(() => {
+              if (!cancelled && isLoggedIn) {
+                api.getPostActionState(postId)
+                  .then((retryState) => { if (!cancelled) { setActionState(retryState); ctxUpdateActionState(postId, retryState); } })
+                  .catch(() => {});
+              }
+            }, 1000);
+          }
         }
-      } catch (e) {
-        console.warn("[PostPage] Failed to load post:", postId, e);
-      }
+        setActionStateLoading(false);
+      } catch {}
       if (!cancelled) setIsLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [postId]);
+  }, [postId, isLoggedIn]);
 
   // Fetch similar posts once post data is available
   useEffect(() => {
@@ -295,32 +458,61 @@ function PostPage({
     return () => { cancelled = true; };
   }, [post?.id]);
 
+  // Helper: update both local state and shared context
+  const applyActionState = useCallback((next: PostActionState) => {
+    setActionState(next);
+    ctxUpdateActionState(postId, next);
+  }, [postId, ctxUpdateActionState]);
+
   async function toggleLike() {
-    if (!actionState || !isLoggedIn) return;
+    if (!isLoggedIn) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       if (actionState.isLiked) {
         await api.unlikePost(postId);
-        setActionState((s) => s && { ...s, isLiked: false });
+        applyActionState({ ...actionState, isLiked: false, isSuperLiked: false });
       } else {
         await api.likePost(postId);
-        setActionState((s) => s && { ...s, isLiked: true });
+        applyActionState({ ...actionState, isLiked: true });
         if (token && post?.tags) sendRecSignal(token, postId, "like", post.tags);
       }
     } catch {}
   }
 
+  async function handleSuperLike() {
+    if (!isLoggedIn || actionState.isSuperLiked) return;
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await api.superLikePost(postId);
+      applyActionState({ ...actionState, isLiked: true, isSuperLiked: true });
+      if (token && post?.tags) sendRecSignal(token, postId, "super_like", post.tags);
+    } catch {}
+  }
+
   async function toggleBookmark() {
-    if (!actionState || !isLoggedIn) return;
+    if (!isLoggedIn) return;
     try {
       if (actionState.isBookmarked) {
         await api.unbookmarkPost(postId);
-        setActionState((s) => s && { ...s, isBookmarked: false });
+        applyActionState({ ...actionState, isBookmarked: false });
       } else {
         await api.bookmarkPost(postId);
-        setActionState((s) => s && { ...s, isBookmarked: true });
+        applyActionState({ ...actionState, isBookmarked: true });
         if (token && post?.tags) sendRecSignal(token, postId, "bookmark", post.tags);
       }
     } catch {}
+  }
+
+  // Refresh action state manually
+  async function refreshActionState() {
+    if (!isLoggedIn) return;
+    try {
+      setActionStateLoading(true);
+      const state = await api.getPostActionState(postId);
+      setActionState(state);
+    } catch {} finally {
+      setActionStateLoading(false);
+    }
   }
 
   if (isLoading || !post) {
@@ -331,13 +523,17 @@ function PostPage({
     );
   }
 
-  // For videos: use safe-area-aware height so controls stay tappable
+  // For videos: use safe-area-aware height so controls stay tappable and video fits perfectly
   // For images: use full screen height for max viewing area
   const isVideo = post.type === 1;
-  const displayH = isVideo ? mediaH : screenH;
+  const isTallImage = !isVideo && post.width > 0 && (post.height / post.width) > 2.0;
+  const naturalComicHeight = isTallImage ? Math.round(screenW * (post.height / post.width)) : screenH;
+  // Dynamic video height that accounts for safe areas and ensures no cutoff
+  const videoHeight = isVideo 
+    ? screenH - (Platform.OS === 'ios' ? topInset * 2 : 0) - 20 // Account for top and bottom safe areas
+    : screenH;
+  const displayH = isVideo ? videoHeight : screenH;
 
-  const mediaUrl = getMediaUrl(post, qualityOption.detailVariant);
-  const thumbUrl = getMediaUrl(post, "thumb");
   const fullUrl = getMediaUrl(post, "full");
 
   const tagsByType: Record<string, Tag[]> = {};
@@ -356,104 +552,152 @@ function PostPage({
       showsVerticalScrollIndicator={false}
       bounces={false}
       nestedScrollEnabled
+      scrollEventThrottle={16}
     >
       {/* Full-screen media */}
       <View style={{ width: screenW, height: screenH, backgroundColor: "#000", paddingTop: isVideo ? topInset : 0 }}>
         {mediaError ? (
           <View style={[styles.center, { height: displayH }]}>
             <Ionicons name="alert-circle-outline" size={48} color="#666" />
-            <Text style={{ color: "#888", marginTop: 8, fontSize: 14 }}>Failed to load media</Text>
-            <Pressable
-              style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.1)" }}
-              onPress={() => { setMediaError(false); setVideoPlaying(false); }}
-            >
-              <Text style={{ color: "#aaa" }}>Retry</Text>
-            </Pressable>
+            <Text style={{ color: "#888", marginTop: 8, fontSize: 14 }}>
+              {mediaLoadingState === 'failed' 
+                ? `Failed to load media after ${MAX_RETRIES} attempts` 
+                : `Loading media... (Attempt ${mediaRetryCount + 1}/${MAX_RETRIES + 1})`
+              }
+            </Text>
+            {mediaLoadingState === 'failed' ? (
+              <Pressable
+                style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.1)" }}
+                onPress={() => {
+                  if (postIds.length > 1) {
+                    const currentIndex = postIds.indexOf(post!.id);
+                    if (currentIndex < postIds.length - 1) {
+                      router.push(`/post/${postIds[currentIndex + 1]}`);
+                    } else if (currentIndex > 0) {
+                      router.push(`/post/${postIds[currentIndex - 1]}`);
+                    } else {
+                      router.back();
+                    }
+                  } else {
+                    router.back();
+                  }
+                }}
+              >
+                <Text style={{ color: "#fff", fontSize: 14 }}>
+                  {postIds.length > 1 ? "Skip to Next Post" : "Go Back"}
+                </Text>
+              </Pressable>
+            ) : (
+              <View style={{ marginTop: 12 }}>
+                <ActivityIndicator size="small" color="#fff" />
+              </View>
+            )}
           </View>
         ) : isVideo ? (
-          videoPlaying ? (
-            Platform.OS === "web" ? (
-              <video
-                ref={(el: HTMLVideoElement | null) => { webVideoRef.current = el; }}
-                src={fullUrl}
-                poster={thumbUrl}
-                controls
-                autoPlay={isActive}
-                loop
-                muted={isMuted}
-                playsInline
-                onError={() => setMediaError(true)}
-                style={{
-                  width: screenW,
-                  height: displayH,
-                  objectFit: "contain",
-                  backgroundColor: "#000",
-                }}
-              />
-            ) : (
-              <Video
-                ref={videoRef}
-                source={{ uri: fullUrl }}
-                posterSource={{ uri: thumbUrl }}
-                usePoster
-                style={{ width: screenW, height: displayH }}
-                resizeMode={ResizeMode.CONTAIN}
-                shouldPlay={isActive}
-                isLooping
-                useNativeControls
-                isMuted={isMuted}
-                onError={(e) => {
-                  console.warn("[PostPage] Video error:", e);
-                  setMediaError(true);
-                }}
-              />
-            )
-          ) : (
-            <Pressable
-              style={{ width: screenW, height: displayH, justifyContent: "center", alignItems: "center" }}
-              onPress={() => setVideoPlaying(true)}
-            >
-              {Platform.OS === "web" ? (
-                <img
-                  src={thumbUrl}
-                  style={{ width: screenW, height: displayH, objectFit: "contain", backgroundColor: "#000", display: "block" }}
-                  onError={() => setMediaError(true)}
+          <>
+            {videoPlaying ? (
+              Platform.OS === "web" ? (
+                <video
+                  ref={(el: HTMLVideoElement | null) => { webVideoRef.current = el; }}
+                  src={mediaUrl}
+                  poster={videoPosterUrl}
+                  style={{ width: screenW, height: displayH, objectFit: "contain", backgroundColor: "#000" }}
+                  controls
+                  muted={isMuted}
+                  loop
+                  autoPlay={isActive}
+                  onError={() => {
+                    setMediaError(true);
+                    handleMediaFailure();
+                  }}
+                  onCanPlay={handleMediaSuccess}
                 />
               ) : (
-                <Image
-                  source={{ uri: thumbUrl }}
+                <Video
+                  ref={videoRef}
+                  source={{ uri: mediaUrl }}
                   style={{ width: screenW, height: displayH }}
-                  contentFit="contain"
-                  cachePolicy="memory-disk"
-                  onError={() => setMediaError(true)}
+                  resizeMode={ResizeMode.CONTAIN}
+                  shouldPlay={isActive}
+                  isLooping
+                  useNativeControls
+                  isMuted={isMuted}
+                  onError={() => {
+                    setMediaError(true);
+                    handleMediaFailure();
+                  }}
                 />
-              )}
-              <View style={styles.playOverlay}>
-                <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.85)" />
-              </View>
+              )
+            ) : (
+              <Pressable
+                style={{ width: screenW, height: displayH, justifyContent: "center", alignItems: "center", backgroundColor: "#000" }}
+                onPress={() => setVideoPlaying(true)}
+              >
+                {Platform.OS === "web" ? (
+                  <>
+                    {!thumbLoaded && (
+                      <View style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 1 }}>
+                        <ActivityIndicator size="large" color="#fff" />
+                      </View>
+                    )}
+                    <img
+                      src={thumbUrl}
+                      style={{ width: screenW, height: displayH, objectFit: "contain", display: "block" }}
+                      onError={(e) => {
+                        setThumbLoaded(true);
+                        const img = e.target as HTMLImageElement;
+                        img.src = videoPosterUrl;
+                      }}
+                      onLoad={() => setThumbLoaded(true)}
+                    />
+                    <View style={styles.playOverlay}>
+                      <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.85)" />
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    {!thumbLoaded && (
+                      <View style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 1 }}>
+                        <ActivityIndicator size="large" color="#fff" />
+                      </View>
+                    )}
+                    <Image
+                      source={{ uri: thumbUrl }}
+                      style={{ width: screenW, height: displayH }}
+                      contentFit="contain"
+                      cachePolicy="memory-disk"
+                      onError={() => setThumbLoaded(true)}
+                      onLoad={() => setThumbLoaded(true)}
+                    />
+                    <View style={styles.playOverlay}>
+                      <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.85)" />
+                    </View>
+                  </>
+                )}
+              </Pressable>
+            )}
+          </>
+        ) : isTallImage ? (
+          <>
+            <ZoomableImage
+              uri={mediaUrl}
+              width={screenW}
+              height={screenH}
+              onError={() => { setMediaError(true); handleMediaFailure(); }}
+              onLoad={handleMediaSuccess}
+            />
+            <Pressable style={styles.comicExpandBtn} onPress={() => setComicOpen(true)}>
+              <Ionicons name="expand-outline" size={20} color="#fff" />
+              <Text style={styles.comicExpandText}>Read</Text>
             </Pressable>
-          )
-        ) : Platform.OS === "web" ? (
-          <img
-            src={mediaUrl}
-            style={{
-              width: screenW,
-              height: screenH,
-              objectFit: "contain",
-              backgroundColor: "#000",
-              display: "block",
-            }}
-            onError={() => setMediaError(true)}
-          />
+          </>
         ) : (
-          <Image
-            source={{ uri: mediaUrl }}
-            style={{ width: screenW, height: screenH }}
-            contentFit="contain"
-            transition={200}
-            placeholder={thumbUrl}
-            cachePolicy="memory-disk"
-            onError={() => setMediaError(true)}
+          <ZoomableImage
+            uri={mediaUrl}
+            width={screenW}
+            height={screenH}
+            onError={() => { setMediaError(true); handleMediaFailure(); }}
+            onLoad={handleMediaSuccess}
           />
         )}
 
@@ -461,7 +705,9 @@ function PostPage({
         {!mediaError && (
           <View style={[styles.scrollHint, isVideo && { bottom: 60 }]}>
             <Ionicons name="chevron-up" size={20} color="rgba(255,255,255,0.6)" />
-            <Text style={styles.scrollHintText}>Swipe up for details</Text>
+            <Text style={styles.scrollHintText}>
+              {Platform.OS === "web" ? "Scroll down for details" : "Swipe up for details"}
+            </Text>
           </View>
         )}
       </View>
@@ -471,16 +717,23 @@ function PostPage({
         {/* Action bar */}
         <View style={styles.actionBar}>
           <ActionButton
-            icon={actionState?.isLiked ? "heart" : "heart-outline"}
-            color={actionState?.isLiked ? Colors.likeFilled : Colors.textSecondary}
+            icon={actionState.isSuperLiked ? "heart-circle" : actionState.isLiked ? "heart" : "heart-outline"}
+            color={actionState.isSuperLiked ? "#FFD700" : actionState.isLiked ? Colors.likeFilled : Colors.textSecondary}
             label={post.likes != null ? String(post.likes) : "Like"}
             onPress={toggleLike}
+            onLongPress={handleSuperLike}
           />
           <ActionButton
-            icon={actionState?.isBookmarked ? "bookmark" : "bookmark-outline"}
-            color={actionState?.isBookmarked ? Colors.bookmarkFilled : Colors.textSecondary}
+            icon={actionState.isBookmarked ? "bookmark" : "bookmark-outline"}
+            color={actionState.isBookmarked ? Colors.bookmarkFilled : Colors.textSecondary}
             label="Save"
             onPress={toggleBookmark}
+          />
+          <ActionButton
+            icon={actionStateLoading ? "sync-outline" : "refresh-outline"}
+            color={Colors.textSecondary}
+            label={actionStateLoading ? "Loading" : "Refresh"}
+            onPress={refreshActionState}
           />
           <ActionButton
             icon="download-outline"
@@ -564,12 +817,17 @@ function PostPage({
         {similarPosts.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Suggested Posts</Text>
+            <FilterBar
+              filters={filters}
+              onFiltersChange={setFilters}
+              hideTagInput={true}
+            />
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.similarRow}
             >
-              {similarPosts.map((sp) => (
+              {filteredSimilarPosts.map((sp) => (
                 <Pressable
                   key={sp.id}
                   style={styles.similarCard}
@@ -604,6 +862,46 @@ function PostPage({
 
         <View style={{ height: 80 }} />
       </View>
+
+      {/* ── Comic Reader Modal ───────────────────────────────── */}
+      {isTallImage && (
+        <Modal
+          visible={comicOpen}
+          transparent={false}
+          animationType="slide"
+          statusBarTranslucent
+          onRequestClose={() => setComicOpen(false)}
+        >
+          <View style={styles.comicModal}>
+            <View style={styles.comicHeader}>
+              <Text style={styles.comicHeaderTitle}>Post #{post.id}</Text>
+              <Pressable onPress={() => setComicOpen(false)} hitSlop={12} style={styles.comicCloseBtn}>
+                <Ionicons name="close" size={24} color="#fff" />
+              </Pressable>
+            </View>
+            {Platform.OS === "web" ? (
+              <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" } as any}>
+                <img src={mediaUrl} style={{ width: "100%", display: "block" }} />
+              </div>
+            ) : (
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ alignItems: "center" }}
+                showsVerticalScrollIndicator={true}
+                bounces={false}
+                scrollEventThrottle={16}
+              >
+                <Image
+                  source={{ uri: mediaUrl }}
+                  style={{ width: screenW, height: naturalComicHeight }}
+                  contentFit="fill"
+                  cachePolicy="memory-disk"
+                />
+              </ScrollView>
+            )}
+          </View>
+        </Modal>
+      )}
     </ScrollView>
   );
 }
@@ -613,14 +911,16 @@ function ActionButton({
   color,
   label,
   onPress,
+  onLongPress,
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   color: string;
   label: string;
   onPress: () => void;
+  onLongPress?: () => void;
 }) {
   return (
-    <Pressable style={styles.actionBtn} onPress={onPress}>
+    <Pressable style={styles.actionBtn} onPress={onPress} onLongPress={onLongPress} delayLongPress={400}>
       <Ionicons name={icon} size={22} color={color} />
       <Text style={[styles.actionLabel, { color }]}>{label}</Text>
     </Pressable>
@@ -770,11 +1070,89 @@ const styles = StyleSheet.create({
     padding: 2,
   },
   similarLikes: {
+    position: "absolute",
+    bottom: 6,
+    right: 6,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  similarLikesText: {
+    color: "#fff",
     fontSize: FontSize.xs,
-    color: Colors.textMuted,
-    paddingHorizontal: Spacing.xs,
+    fontWeight: "700",
+  },
+  qualitySelector: {
+    position: "absolute",
+    top: 60,
+    right: 12,
+    flexDirection: "row",
+    gap: 4,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    borderRadius: 6,
+    padding: 4,
+    zIndex: 10,
+  },
+  qualityBtn: {
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    textAlign: "center",
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  qualityBtnActive: {
+    backgroundColor: Colors.accent,
+  },
+  qualityBtnText: {
+    color: "#fff",
+    fontSize: FontSize.xs,
+    fontWeight: "600",
+  },
+  qualityBtnTextActive: {
+    color: "#000",
+  },
+  comicExpandBtn: {
+    position: "absolute",
+    bottom: 80,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.25)",
+  },
+  comicExpandText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  comicModal: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  comicHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingTop: 48,
+    backgroundColor: "rgba(0,0,0,0.85)",
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255,255,255,0.1)",
+  },
+  comicHeaderTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  comicCloseBtn: {
+    padding: 4,
   },
   viewMoreBtn: {
     flexDirection: "row",
@@ -790,5 +1168,24 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontWeight: "600",
     color: Colors.accent,
+  },
+  mouseWheelIndicator: {
+    position: "absolute",
+    top: -30,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    backgroundColor: "rgba(76, 175, 80, 0.9)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  mouseWheelText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "600",
   },
 });

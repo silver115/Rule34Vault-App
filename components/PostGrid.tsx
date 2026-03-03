@@ -1,17 +1,19 @@
-import React, { useCallback, useState, useEffect, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  FlatList,
-  View,
-  StyleSheet,
-  ActivityIndicator,
-  Text,
-  RefreshControl,
-  Platform,
+    ActivityIndicator,
+    FlatList,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    View,
 } from "react-native";
-import { Post } from "../api/rule34vault";
-import { PostCard, NUM_COLUMNS, GAP, isBrokenPost, onBrokenPostsChange } from "./PostCard";
+import api, { Post } from "../api/rule34vault";
+import { Colors, FontSize, Spacing } from "../constants/theme";
+import { useAuth } from "../contexts/AuthContext";
 import { usePostList } from "../contexts/PostListContext";
-import { Colors, Spacing, FontSize } from "../constants/theme";
+import { GAP, isBrokenPost, NUM_COLUMNS, onBrokenPostsChange, PostCard } from "./PostCard";
+import { PostCardSkeleton } from "./SkeletonLoader";
 
 interface PostGridProps {
   posts: Post[];
@@ -21,7 +23,10 @@ interface PostGridProps {
   onEndReached: () => void;
   emptyText?: string;
   ListHeaderComponent?: React.ReactElement;
+  ListEmptyComponent?: React.ReactElement | null;
   badgeMap?: Map<number, string>;
+  /** If provided, replaces the default navigate-to-detail behaviour on post tap */
+  onPostPress?: (post: Post, index: number) => void;
 }
 
 export function PostGrid({
@@ -32,19 +37,43 @@ export function PostGrid({
   onEndReached,
   emptyText = "No posts found",
   ListHeaderComponent,
+  ListEmptyComponent,
   badgeMap,
+  onPostPress,
 }: PostGridProps) {
-  const { setPosts } = usePostList();
+  const { actionStates, updateActionState, ensureActionStates } = usePostList();
+  const { isLoggedIn } = useAuth();
+  const { width: screenWidth } = useWindowDimensions();
+
+  // Calculate card dimensions
+  const cardWidth = Math.floor((screenWidth - GAP * (NUM_COLUMNS + 1)) / NUM_COLUMNS);
+  const cardHeight = Math.floor(cardWidth * 4 / 3); // 4:3 aspect ratio
+
+  // Fetch action states for all posts, deduplication handled by context
+  useEffect(() => {
+    if (!isLoggedIn || posts.length === 0) return;
+    ensureActionStates(posts.map(p => p.id));
+  }, [posts, isLoggedIn, ensureActionStates]);
+
+  // Refresh action states for a specific post after user action
+  const refreshActionState = useCallback(async (postId: number) => {
+    if (!isLoggedIn) return;
+    try {
+      const state = await api.getPostActionState(postId);
+      updateActionState(postId, state);
+    } catch {}
+  }, [isLoggedIn, updateActionState]);
 
   // Re-render when broken posts are detected so they get filtered out
-  const [, setBrokenTick] = useState(0);
+  const [brokenTick, setBrokenTick] = useState(0);
   useEffect(() => {
     return onBrokenPostsChange(() => setBrokenTick((t) => t + 1));
   }, []);
 
   const filteredPosts = useMemo(
     () => posts.filter((p) => !isBrokenPost(p.id)),
-    [posts, setBrokenTick]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [posts, brokenTick]
   );
 
   const renderItem = useCallback(
@@ -52,19 +81,24 @@ export function PostGrid({
       <PostCard
         post={item}
         index={index}
-        onPress={() => setPosts(filteredPosts)}
+        onPress={onPostPress ? () => onPostPress(item, index) : undefined}
         badgeText={badgeMap?.get(item.id)}
+        actionState={actionStates[item.id]}
+        onActionChange={refreshActionState}
       />
     ),
-    [filteredPosts, setPosts, badgeMap]
+    [filteredPosts, onPostPress, badgeMap, actionStates, refreshActionState]
   );
 
   const keyExtractor = useCallback((item: Post) => String(item.id), []);
 
+  // Show skeleton cards during initial load
   if (isLoading && filteredPosts.length === 0) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={Colors.accent} />
+      <View style={styles.grid}>
+        {Array.from({ length: 6 }, (_, index) => (
+          <PostCardSkeleton key={`skeleton-${index}`} cardWidth={cardWidth} cardHeight={cardHeight} />
+        ))}
       </View>
     );
   }
@@ -78,17 +112,19 @@ export function PostGrid({
       contentContainerStyle={styles.grid}
       showsVerticalScrollIndicator={false}
       onEndReached={onEndReached}
-      onEndReachedThreshold={0.5}
-      removeClippedSubviews={Platform.OS !== "web"}
+      onEndReachedThreshold={0.1}
+      removeClippedSubviews={true}
       windowSize={5}
       maxToRenderPerBatch={6}
-      initialNumToRender={8}
-      updateCellsBatchingPeriod={50}
+      initialNumToRender={6}
+      updateCellsBatchingPeriod={30}
       ListHeaderComponent={ListHeaderComponent}
       ListEmptyComponent={
-        <View style={styles.center}>
-          <Text style={styles.emptyText}>{emptyText}</Text>
-        </View>
+        ListEmptyComponent !== undefined ? ListEmptyComponent : (
+          <View style={styles.center}>
+            <Text style={styles.emptyText}>{emptyText}</Text>
+          </View>
+        )
       }
       ListFooterComponent={
         isLoadingMore ? (

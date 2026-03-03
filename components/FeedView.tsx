@@ -1,31 +1,31 @@
-import React, { memo, useState, useCallback, useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  FlatList,
-  StyleSheet,
-  Pressable,
-  useWindowDimensions,
-  ActivityIndicator,
-  Platform,
-  Alert,
-  Animated,
-  StatusBar,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
-} from "react-native";
-import { Image } from "expo-image";
-import { Video, ResizeMode } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
+import { ResizeMode, Video } from "expo-av";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
+import React, { memo, useCallback, useEffect, useRef, useState } from "react";
+import {
+    ActivityIndicator,
+    Alert,
+    Animated,
+    FlatList,
+    NativeScrollEvent,
+    NativeSyntheticEvent,
+    Platform,
+    Pressable,
+    StatusBar,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { downloadMedia } from "../utils/download";
-import { sendRecSignal, sendViewDuration } from "../utils/recommendations";
-import api, { Post, getMediaUrl, PostActionState } from "../api/rule34vault";
+import api, { getMediaUrl, Post } from "../api/rule34vault";
+import { Colors, FontSize, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
 import { useSettings } from "../contexts/SettingsContext";
-import { Colors, Radius, Spacing, FontSize } from "../constants/theme";
-import { isBrokenPost, onBrokenPostsChange, markBroken } from "./PostCard";
+import { downloadMedia } from "../utils/download";
+import { sendRecSignal } from "../utils/recommendations";
+import { isBrokenPost, markBroken, onBrokenPostsChange } from "./PostCard";
 
 // ── FeedView Container ───────────────────────────────────────
 
@@ -247,7 +247,7 @@ export function FeedView({
         onEndReached={onEndReached}
         onEndReachedThreshold={0.8}
         removeClippedSubviews={Platform.OS !== "web"}
-        windowSize={5}
+        windowSize={3}
         maxToRenderPerBatch={3}
         initialNumToRender={2}
         updateCellsBatchingPeriod={50}

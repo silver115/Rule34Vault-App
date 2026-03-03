@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, Text, Pressable, StyleSheet } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused } from "@react-navigation/native";
+import { useNavigation } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { Modal, Pressable, StatusBar, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import api, { Post, SearchFilters } from "../../api/rule34vault";
-import { PostGrid } from "../../components/PostGrid";
-import { FeedView } from "../../components/FeedView";
 import { FilterBar } from "../../components/FilterBar";
-import { Colors, Radius, Spacing, FontSize } from "../../constants/theme";
-import { useAppTheme } from "../../contexts/ThemeContext";
+import { PostGrid } from "../../components/PostGrid";
+import { TikTokFeed } from "../../components/TikTokFeed";
+import { Colors, FontSize, Radius, Spacing } from "../../constants/theme";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useAppTheme } from "../../contexts/ThemeContext";
 
 type FeedType = "recent" | "hot" | "highest" | "comments";
 
@@ -22,9 +25,11 @@ export default function BrowseScreen() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [filters, setFilters] = useState<SearchFilters>({});
   const [feedType, setFeedType] = useState<FeedType>("recent");
   const [feedOpen, setFeedOpen] = useState(false);
+  const [fullscreenIndex, setFullscreenIndex] = useState<number | null>(null);
   const cursorRef = useRef<string | null>(null);
   const hasMoreRef = useRef(true);
   const isLoadingMoreRef = useRef(false);
@@ -47,6 +52,7 @@ export default function BrowseScreen() {
       setIsLoadingMore(true);
     }
 
+    setLoadError(false);
     try {
       const batchSize = minScore > 0 ? 120 : 60;
       const feedFilters: SearchFilters = { ...currentFilters };
@@ -91,6 +97,7 @@ export default function BrowseScreen() {
       }
     } catch (e: any) {
       console.error("Failed to load posts:", e?.message || e, JSON.stringify(e));
+      if (refresh) setLoadError(true);
     } finally {
       setIsLoading(false);
       isLoadingMoreRef.current = false;
@@ -118,9 +125,41 @@ export default function BrowseScreen() {
   }, []);
 
   const activeFeed = FEED_OPTIONS.find((f) => f.key === feedType)!;
-  const availableFeeds = FEED_OPTIONS;
   const { colors } = useAppTheme();
   const { viewingMode, setViewingMode } = useSettings();
+  const isFocused = useIsFocused();
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+
+  const handlePostPress = useCallback((_post: Post, index: number) => {
+    setFullscreenIndex(index);
+  }, []);
+
+  // Hide the top header when in TikTok mode for full immersion
+  useEffect(() => {
+    navigation.setOptions({
+      headerShown: viewingMode !== "tiktok",
+    });
+  }, [viewingMode, navigation]);
+
+  if (loadError && posts.length === 0) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.bg, justifyContent: "center", alignItems: "center", gap: 12 }]}>
+        <Ionicons name="cloud-offline-outline" size={52} color={colors.textMuted} />
+        <Text style={[styles.feedLabel, { color: colors.text, fontSize: FontSize.lg }]}>Failed to load</Text>
+        <Text style={{ color: colors.textSecondary, fontSize: FontSize.sm, textAlign: "center", paddingHorizontal: 32 }}>
+          Check your connection and try again
+        </Text>
+        <Pressable
+          style={[styles.feedSelector, { backgroundColor: colors.accent, borderColor: colors.accent, marginTop: 8 }]}
+          onPress={() => doLoad(true)}
+        >
+          <Ionicons name="refresh" size={16} color="#fff" />
+          <Text style={[styles.feedLabel, { color: "#fff" }]}>Retry</Text>
+        </Pressable>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
@@ -140,7 +179,7 @@ export default function BrowseScreen() {
         </Pressable>
         <Pressable
           style={[styles.viewToggle, { backgroundColor: colors.bgCard, borderColor: colors.border }]}
-          onPress={() => setViewingMode(viewingMode === "grid" ? "feed" : "grid")}
+          onPress={() => setViewingMode(viewingMode === "grid" ? "tiktok" : "grid")}
         >
           <Ionicons
             name={viewingMode === "grid" ? "phone-portrait-outline" : "grid-outline"}
@@ -151,8 +190,11 @@ export default function BrowseScreen() {
       </View>
 
       {feedOpen && (
+        <Pressable style={styles.feedBackdrop} onPress={() => setFeedOpen(false)} />
+      )}
+      {feedOpen && (
         <View style={[styles.feedDropdown, { backgroundColor: colors.bgCard, borderColor: colors.border }]}>
-          {availableFeeds.map((opt) => {
+          {FEED_OPTIONS.map((opt) => {
             const active = feedType === opt.key;
             return (
               <Pressable
@@ -183,26 +225,60 @@ export default function BrowseScreen() {
         </View>
       )}
 
-      <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
-      <PostGrid
-        key={`grid-${feedType}-${filters.type ?? "all"}-${filters.includeTags?.join(",") ?? ""}`}
-        posts={posts}
-        isLoading={isLoading}
-        isLoadingMore={isLoadingMore}
-        onRefresh={() => doLoad(true)}
-        onEndReached={() => doLoad(false)}
-      />
-      {viewingMode === "feed" && (
-        <FeedView
-          key={`feed-${feedType}-${filters.type ?? "all"}-${filters.includeTags?.join(",") ?? ""}`}
+      {viewingMode !== "tiktok" && (
+        <FilterBar filters={filters} onFiltersChange={handleFiltersChange} />
+      )}
+
+      {/* Main Content — only one view mounted at a time to save RAM */}
+      {viewingMode === "tiktok" ? (
+        <TikTokFeed
+          key={`tiktok-${feedType}-${filters.type ?? "all"}-${filters.includeTags?.join(",") ?? ""}`}
+          posts={posts}
+          isLoading={isLoading}
+          tabFocused={isFocused}
+          onRefresh={() => doLoad(true)}
+          onLoadMore={() => doLoad(false)}
+        />
+      ) : (
+        <PostGrid
+          key={`grid-${feedType}-${filters.type ?? "all"}-${filters.includeTags?.join(",") ?? ""}`}
           posts={posts}
           isLoading={isLoading}
           isLoadingMore={isLoadingMore}
           onRefresh={() => doLoad(true)}
           onEndReached={() => doLoad(false)}
-          onExit={() => setViewingMode("grid")}
+          onPostPress={handlePostPress}
         />
       )}
+
+      {/* Full-screen TikTok player modal — opened when tapping a grid post */}
+      <Modal
+        visible={fullscreenIndex !== null}
+        animationType="slide"
+        statusBarTranslucent
+        onRequestClose={() => setFullscreenIndex(null)}
+      >
+        <View style={styles.fullscreenModal}>
+          <StatusBar hidden />
+          {fullscreenIndex !== null && (
+            <TikTokFeed
+              posts={posts.slice(fullscreenIndex)}
+              isLoading={false}
+              tabFocused={fullscreenIndex !== null}
+              onRefresh={() => doLoad(true)}
+              onLoadMore={() => doLoad(false)}
+            />
+          )}
+          {/* Close button — top-right, above safe area */}
+          <Pressable
+            style={[styles.modalCloseBtn, { top: insets.top + 12 }]}
+            onPress={() => setFullscreenIndex(null)}
+            hitSlop={12}
+          >
+            <Ionicons name="close" size={22} color="rgba(255,255,255,0.85)" />
+          </Pressable>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -245,6 +321,14 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: Colors.text,
   },
+  feedBackdrop: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1,
+  },
   feedDropdown: {
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.xs,
@@ -253,6 +337,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     overflow: "hidden",
+    zIndex: 2,
   },
   feedItem: {
     flexDirection: "row",
@@ -263,16 +348,24 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
   },
-  feedItemActive: {
-    backgroundColor: `${Colors.accent}15`,
-  },
   feedItemText: {
     flex: 1,
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
   },
-  feedItemTextActive: {
-    color: Colors.accent,
-    fontWeight: "700",
+  fullscreenModal: {
+    flex: 1,
+    backgroundColor: "#000",
+  },
+  modalCloseBtn: {
+    position: "absolute",
+    right: 14,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 50,
   },
 });

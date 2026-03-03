@@ -1,22 +1,21 @@
-import React, { useState, useEffect, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  RefreshControl,
-  Alert,
-  Platform,
-  Linking,
-} from "react-native";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { Image } from "expo-image";
+import { useFocusEffect, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useState } from "react";
+import {
+    Linking,
+    Platform,
+    Pressable,
+    RefreshControl,
+    ScrollView,
+    StyleSheet,
+    Text,
+    View
+} from "react-native";
+import api, { getAvatarUrl, getBannerUrl, Tag } from "../../api/rule34vault";
+import { Colors, FontSize, Radius, Spacing } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
-import api, { getAvatarUrl, getBannerUrl, Tag, Playlist } from "../../api/rule34vault";
 import { usePlaylist } from "../../contexts/PlaylistContext";
-import { Colors, Radius, Spacing, FontSize } from "../../constants/theme";
 import { useAppTheme } from "../../contexts/ThemeContext";
 
 function WebImg({ uri, style }: { uri: string; style: Record<string, unknown> }) {
@@ -60,6 +59,13 @@ export default function ProfileScreen() {
     loadProfileData();
   }, [isLoggedIn]);
 
+  // Refresh stats whenever the tab gains focus (keeps counts up to date after liking/bookmarking)
+  useFocusEffect(
+    useCallback(() => {
+      loadProfileData();
+    }, [loadProfileData])
+  );
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadProfileData();
@@ -78,6 +84,13 @@ export default function ProfileScreen() {
           <Pressable style={[styles.loginBtn, { backgroundColor: colors.accent }]} onPress={() => router.push("/login")}>
             <Ionicons name="log-in-outline" size={20} color="#fff" />
             <Text style={styles.loginBtnText}>Sign In</Text>
+          </Pressable>
+          <Pressable
+            style={[styles.settingsBtn, { borderColor: colors.border }]}
+            onPress={() => router.push("/settings")}
+          >
+            <Ionicons name="settings-outline" size={16} color={colors.textSecondary} />
+            <Text style={[styles.settingsBtnText, { color: colors.textSecondary }]}>Settings</Text>
           </Pressable>
         </View>
       </View>
@@ -353,6 +366,20 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: FontSize.lg,
     fontWeight: "700",
+  },
+  settingsBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+  },
+  settingsBtnText: {
+    fontSize: FontSize.sm,
+    fontWeight: "600",
   },
   bannerWrap: {
     width: "100%",

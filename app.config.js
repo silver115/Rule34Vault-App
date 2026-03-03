@@ -25,18 +25,23 @@ const config = appJson.expo || appJson;
 
 // Optionally override push server URL from .env (for local development)
 config.extra = config.extra || {};
-if (env.PUSH_SERVER_URL) {
-  config.extra.pushServerUrl = env.PUSH_SERVER_URL;
-}
-if (env.EXPO_PUBLIC_PUSH_SERVER_URL) {
-  config.extra.pushServerUrl = env.EXPO_PUBLIC_PUSH_SERVER_URL;
-}
-if (env.REC_SERVER_URL || process.env.REC_SERVER_URL) {
-  config.extra.recServerUrl = env.REC_SERVER_URL || process.env.REC_SERVER_URL;
-}
-if (env.EXPO_PUBLIC_REC_SERVER_URL) {
-  config.extra.recServerUrl = env.EXPO_PUBLIC_REC_SERVER_URL;
-}
+
+// Resolve server URLs: file-based .env (local) → process.env (EAS cloud build) → app.json default
+const pushUrl =
+  env.PUSH_SERVER_URL ||
+  env.EXPO_PUBLIC_PUSH_SERVER_URL ||
+  process.env.PUSH_SERVER_URL ||
+  process.env.EXPO_PUBLIC_PUSH_SERVER_URL ||
+  config.extra.pushServerUrl;
+if (pushUrl) config.extra.pushServerUrl = pushUrl;
+
+const recUrl =
+  env.REC_SERVER_URL ||
+  env.EXPO_PUBLIC_REC_SERVER_URL ||
+  process.env.REC_SERVER_URL ||
+  process.env.EXPO_PUBLIC_REC_SERVER_URL ||
+  config.extra.recServerUrl;
+if (recUrl) config.extra.recServerUrl = recUrl;
 
 module.exports = ({ config: _cfg }) => {
   return {

@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useIsFocused } from "@react-navigation/native";
 import { useNavigation, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -11,8 +12,10 @@ import {
 } from "react-native";
 import api, { Post } from "../../api/rule34vault";
 import { PostGrid } from "../../components/PostGrid";
+import { TikTokFeed } from "../../components/TikTokFeed";
 import { FontSize, Radius, Spacing } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
+import { useSettings } from "../../contexts/SettingsContext";
 import { useAppTheme } from "../../contexts/ThemeContext";
 import {
     fetchRecommendations,
@@ -25,8 +28,10 @@ const PAGE_SIZE = 30;
 export default function ForYouScreen() {
   const { isLoggedIn, user, token } = useAuth();
   const { colors } = useAppTheme();
+  const { scrollMode } = useSettings();
   const router = useRouter();
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
 
   const usingServer = hasRecServer();
 
@@ -112,8 +117,8 @@ export default function ForYouScreen() {
         }
 
         items.forEach((p) => seenIdsRef.current.add(p.id));
-        // Server always has more unseen content; client-side stops when results thin out
-        hasMoreRef.current = usingServer ? items.length > 0 : items.length >= Math.floor(PAGE_SIZE * 0.5);
+        // More lenient stopping conditions - only stop if we get very few items
+        hasMoreRef.current = usingServer ? items.length > 0 : items.length >= Math.floor(PAGE_SIZE * 0.3);
 
         if (refresh) {
           setPosts(items);
@@ -160,34 +165,57 @@ export default function ForYouScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {topTags.length > 0 && (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.tagsRow}
-        >
-          <Text style={[styles.basedOn, { color: colors.textMuted }]}>Based on:</Text>
-          {topTags.map((tag) => (
-            <View key={tag} style={[styles.tagPill, { backgroundColor: colors.bgTertiary }]}>
-              <Text style={[styles.tagPillText, { color: colors.accent }]}>{tag}</Text>
+      {scrollMode === "tiktok" ? (
+        <TikTokFeed
+          posts={posts}
+          isLoading={isLoading}
+          tabFocused={isFocused}
+          onRefresh={() => load(true)}
+          onLoadMore={() => load(false)}
+        />
+      ) : (
+        <>
+          {topTags.length > 0 && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tagsRow}
+            >
+              <Text style={[styles.basedOn, { color: colors.textMuted }]}>Based on:</Text>
+              {topTags.map((tag) => (
+                <View key={tag} style={[styles.tagPill, { backgroundColor: colors.bgTertiary }]}>
+                  <Text style={[styles.tagPillText, { color: colors.accent }]}>{tag}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+          {usingServer && (
+            <View style={[styles.serverBadge, { backgroundColor: colors.bgTertiary }]}>
+              <Ionicons name="server-outline" size={11} color={colors.accent} />
+              <Text style={[styles.serverBadgeText, { color: colors.accent }]}>Server algorithm active</Text>
             </View>
-          ))}
-        </ScrollView>
+          )}
+          <PostGrid
+            posts={posts}
+            isLoading={isLoading}
+            isLoadingMore={isLoadingMore}
+            onRefresh={() => load(true)}
+            onEndReached={() => load(false)}
+            emptyText=""
+            ListEmptyComponent={
+              !isLoading ? (
+                <View style={styles.emptyState}>
+                  <Ionicons name="sparkles-outline" size={56} color={colors.textMuted} />
+                  <Text style={[styles.emptyTitle, { color: colors.text }]}>Nothing here yet</Text>
+                  <Text style={[styles.gateDesc, { color: colors.textSecondary }]}>
+                    Like or bookmark posts to train your personalised feed
+                  </Text>
+                </View>
+              ) : null
+            }
+          />
+        </>
       )}
-      {usingServer && (
-        <View style={[styles.serverBadge, { backgroundColor: colors.bgTertiary }]}>
-          <Ionicons name="server-outline" size={11} color={colors.accent} />
-          <Text style={[styles.serverBadgeText, { color: colors.accent }]}>Server algorithm active</Text>
-        </View>
-      )}
-      <PostGrid
-        posts={posts}
-        isLoading={isLoading}
-        isLoadingMore={isLoadingMore}
-        onRefresh={() => load(true)}
-        onEndReached={() => load(false)}
-        emptyText="Like or bookmark some posts to get personalised recommendations"
-      />
     </View>
   );
 }
@@ -253,6 +281,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
     borderRadius: Radius.full,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: Spacing.xxl,
+    paddingHorizontal: Spacing.xl,
+    gap: Spacing.sm,
+  },
+  emptyTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: "700",
+    textAlign: "center",
   },
   serverBadgeText: {
     fontSize: FontSize.xs,

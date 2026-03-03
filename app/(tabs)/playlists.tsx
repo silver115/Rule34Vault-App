@@ -1,15 +1,18 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import { Ionicons } from "@expo/vector-icons";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  FlatList,
-  StyleSheet,
-  ActivityIndicator,
-  Text,
-  RefreshControl,
+    ActivityIndicator,
+    FlatList,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    useWindowDimensions,
+    View,
 } from "react-native";
 import api, { Playlist } from "../../api/rule34vault";
 import { PlaylistCard } from "../../components/PlaylistCard";
-import { Colors, Spacing, FontSize } from "../../constants/theme";
+import { SkeletonLoader } from "../../components/SkeletonLoader";
+import { Colors, FontSize, Spacing } from "../../constants/theme";
 import { useAppTheme } from "../../contexts/ThemeContext";
 
 export default function PlaylistsScreen() {
@@ -57,11 +60,20 @@ export default function PlaylistsScreen() {
   }, []);
 
   const { colors } = useAppTheme();
+  const { width } = useWindowDimensions();
 
   if (isLoading && playlists.length === 0) {
     return (
-      <View style={[styles.center, { backgroundColor: colors.bg }]}>
-        <ActivityIndicator size="large" color={colors.accent} />
+      <View style={[styles.container, { backgroundColor: colors.bg }]}>
+        {Array.from({ length: 6 }).map((_, i) => (
+          <View key={i} style={[styles.skeletonRow, { backgroundColor: colors.bgCard }]}>
+            <SkeletonLoader width={56} height={56} style={{ borderRadius: 8 }} />
+            <View style={{ flex: 1, gap: 8 }}>
+              <SkeletonLoader width="70%" height={14} />
+              <SkeletonLoader width="40%" height={11} />
+            </View>
+          </View>
+        ))}
       </View>
     );
   }
@@ -77,7 +89,11 @@ export default function PlaylistsScreen() {
         onEndReached={() => loadPlaylists(false)}
         onEndReachedThreshold={0.5}
         ListEmptyComponent={
-          <Text style={[styles.empty, { color: colors.textMuted }]}>No playlists found</Text>
+          <View style={styles.emptyState}>
+            <Ionicons name="list-outline" size={56} color={colors.textMuted} />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No Playlists</Text>
+            <Text style={[styles.empty, { color: colors.textMuted }]}>Create playlists on rule34vault.com</Text>
+          </View>
         }
         ListFooterComponent={
           isLoadingMore ? (
@@ -124,5 +140,23 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: Spacing.lg,
     alignItems: "center",
+  },
+  skeletonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: 10,
+  },
+  emptyState: {
+    alignItems: "center",
+    paddingVertical: Spacing.xxl,
+    gap: Spacing.sm,
+  },
+  emptyTitle: {
+    fontSize: FontSize.lg,
+    fontWeight: "700",
   },
 });

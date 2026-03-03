@@ -1,25 +1,26 @@
-import React, { memo, useState, useCallback } from "react";
-import {
-  View,
-  StyleSheet,
-  Pressable,
-  Text,
-  Platform,
-  useWindowDimensions,
-  ActivityIndicator,
-  Alert,
-} from "react-native";
-import { downloadMedia } from "../utils/download";
-import { sendRecSignal } from "../utils/recommendations";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
+import React, { memo, useCallback, useState } from "react";
+import {
+    ActivityIndicator,
+    Alert,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    View,
+    useWindowDimensions,
+} from "react-native";
 import api, { Post, getMediaUrl, getMediaUrlDirect } from "../api/rule34vault";
+import { Colors, FontSize, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
 import { usePlaylist } from "../contexts/PlaylistContext";
-import { Colors, Radius, Spacing, FontSize } from "../constants/theme";
-import { useAppTheme } from "../contexts/ThemeContext";
 import { useSettings } from "../contexts/SettingsContext";
+import { useAppTheme } from "../contexts/ThemeContext";
+import { downloadMedia } from "../utils/download";
+import { sendRecSignal } from "../utils/recommendations";
 
 const NUM_COLUMNS = 2;
 const GAP = Spacing.sm;
@@ -50,9 +51,11 @@ interface PostCardProps {
   onPress?: () => void;
   badgeText?: string;
   onBroken?: (id: number) => void;
+  actionState?: { isLiked: boolean; isBookmarked: boolean; isSuperLiked: boolean };
+  onActionChange?: (postId: number) => void;
 }
 
-function Thumbnail({ uri, fallbackUri, width, height, onFinalError }: { uri: string; fallbackUri?: string; width: number; height: number; onFinalError?: () => void }) {
+function Thumbnail({ uri, fallbackUri, width, height, onFinalError, priority = "normal" }: { uri: string; fallbackUri?: string; width: number; height: number; onFinalError?: () => void; priority?: "high" | "normal" | "low" }) {
   const [currentUri, setCurrentUri] = React.useState(uri);
   const [errored, setErrored] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
@@ -78,16 +81,16 @@ function Thumbnail({ uri, fallbackUri, width, height, onFinalError }: { uri: str
 
   if (errored) {
     return (
-      <View style={{ width, height, backgroundColor: Colors.bgTertiary, justifyContent: "center", alignItems: "center" }}>
+      <View style={[styles.thumbnailContainer, { width, height, backgroundColor: Colors.bgTertiary, justifyContent: "center", alignItems: "center" }]}>
         <Ionicons name="image-outline" size={32} color={Colors.textMuted} />
       </View>
     );
   }
   if (Platform.OS === "web") {
     return (
-      <View style={{ width, height, backgroundColor: Colors.bgTertiary }}>
+      <View style={[styles.thumbnailContainer, { width, height, backgroundColor: Colors.bgTertiary }]}>
         {loading && (
-          <View style={{ position: "absolute", top: 0, left: 0, width, height, justifyContent: "center", alignItems: "center", zIndex: 1 }}>
+          <View style={[styles.loadingOverlay, { width, height }]}>
             <ActivityIndicator size="small" color={Colors.accent} />
           </View>
         )}
@@ -98,6 +101,8 @@ function Thumbnail({ uri, fallbackUri, width, height, onFinalError }: { uri: str
             height,
             objectFit: "cover",
             display: "block",
+            opacity: loading ? 0 : 1,
+            transition: "opacity 0.2s",
           }}
           loading="lazy"
           onLoad={() => setLoading(false)}
@@ -107,19 +112,19 @@ function Thumbnail({ uri, fallbackUri, width, height, onFinalError }: { uri: str
     );
   }
   return (
-    <View style={{ width, height, backgroundColor: Colors.bgTertiary }}>
+    <View style={[styles.thumbnailContainer, { width, height, backgroundColor: Colors.bgTertiary }]}>
       {loading && (
-        <View style={{ position: "absolute", top: 0, left: 0, width, height, justifyContent: "center", alignItems: "center", zIndex: 1 }}>
+        <View style={[styles.loadingOverlay, { width, height }]}>
           <ActivityIndicator size="small" color={Colors.accent} />
         </View>
       )}
       <Image
         source={{ uri: currentUri }}
-        style={{ width, height }}
+        style={[styles.thumbnailImage, { width, height, opacity: loading ? 0 : 1 }]}
         contentFit="cover"
-        transition={200}
+        transition={0}
         cachePolicy="memory-disk"
-        priority="high"
+        priority={priority}
         onLoad={() => setLoading(false)}
         onError={handleError}
       />
@@ -127,7 +132,7 @@ function Thumbnail({ uri, fallbackUri, width, height, onFinalError }: { uri: str
   );
 }
 
-function PostCardInner({ post, index, onPress, badgeText, onBroken }: PostCardProps) {
+function PostCardInner({ post, index, onPress, badgeText, onBroken, actionState, onActionChange }: PostCardProps) {
   const router = useRouter();
   const { isLoggedIn, token } = useAuth();
   const { colors } = useAppTheme();
@@ -141,6 +146,13 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken }: PostCardPr
   const fullUrl = getMediaUrl(post, "full");
   const isVideo = post.type === 1;
   const [downloading, setDownloading] = useState(false);
+
+  // Use actionState prop if provided, otherwise use local state
+  const liked = actionState?.isLiked ?? false;
+  const bookmarked = actionState?.isBookmarked ?? false;
+  const superLiked = actionState?.isSuperLiked ?? false;
+  const [addedToPlaylist, setAddedToPlaylist] = useState(false);
+  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
 
   const handleDownload = useCallback(async () => {
     if (downloading) return;
@@ -158,42 +170,45 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken }: PostCardPr
     }
   }, [fullUrl, post.id, isVideo, downloading]);
 
-  const [liked, setLiked] = useState(false);
-  const [bookmarked, setBookmarked] = useState(false);
-  const [addedToPlaylist, setAddedToPlaylist] = useState(false);
-  const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
-
-  // Disabled: fetch action state individually per card causes too many renders
-  // TODO: replace with batch fetch at grid level
-  // React.useEffect(() => { ... }, [post.id, isLoggedIn]);
-
   const handleLike = useCallback(async () => {
     if (!isLoggedIn) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       if (liked) {
         await api.unlikePost(post.id);
-        setLiked(false);
       } else {
         await api.likePost(post.id);
-        setLiked(true);
+        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         if (token && post.tags) sendRecSignal(token, post.id, "like", post.tags);
       }
+      onActionChange?.(post.id);
     } catch {}
-  }, [liked, post.id, isLoggedIn, token]);
+  }, [liked, post.id, isLoggedIn, token, onActionChange]);
+
+  const handleSuperLike = useCallback(async () => {
+    if (!isLoggedIn || superLiked) return;
+    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    try {
+      await api.superLikePost(post.id);
+      if (token && post.tags) sendRecSignal(token, post.id, "super_like", post.tags);
+      onActionChange?.(post.id);
+    } catch {}
+  }, [isLoggedIn, superLiked, post.id, post.tags, token, onActionChange]);
 
   const handleBookmark = useCallback(async () => {
     if (!isLoggedIn) return;
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       if (bookmarked) {
         await api.unbookmarkPost(post.id);
-        setBookmarked(false);
       } else {
         await api.bookmarkPost(post.id);
-        setBookmarked(true);
+        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         if (token && post.tags) sendRecSignal(token, post.id, "bookmark", post.tags);
       }
+      onActionChange?.(post.id);
     } catch {}
-  }, [bookmarked, post.id, isLoggedIn, token]);
+  }, [bookmarked, post.id, isLoggedIn, token, onActionChange]);
 
   const handlePlaylistToggle = useCallback(async () => {
     if (!isLoggedIn) return;
@@ -222,19 +237,27 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken }: PostCardPr
   return (
     <Pressable
       onPress={() => {
-        onPress?.();
-        router.push({
-          pathname: "/post/[id]",
-          params: { id: String(post.id) },
-        });
+        if (onPress) {
+          onPress();
+        } else {
+          router.push({
+            pathname: "/post/[id]",
+            params: { id: String(post.id) },
+          });
+        }
       }}
-      style={[styles.card, { width: cardWidth, height: cardHeight, backgroundColor: colors.bgCard }]}
+      style={({ pressed }) => [
+        styles.card,
+        { width: cardWidth, height: cardHeight, backgroundColor: colors.bgCard },
+        { transform: [{ scale: pressed ? 0.97 : 1 }], opacity: pressed ? 0.92 : 1 },
+      ]}
     >
       <Thumbnail
         uri={thumbUrl}
         fallbackUri={thumbFallback}
         width={cardWidth}
         height={cardHeight}
+        priority={index < 6 ? "high" : "normal"}
         onFinalError={() => { markBroken(post.id); onBroken?.(post.id); }}
       />
       {badgeText ? (
@@ -262,14 +285,24 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken }: PostCardPr
       {/* Quick action buttons */}
       {isLoggedIn && (
         <View style={styles.quickActions}>
-          <Pressable style={styles.quickBtn} onPress={handleLike}>
+          <Pressable
+            style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.7, transform: [{ scale: 0.85 }] }]}
+            onPress={handleLike}
+            onLongPress={handleSuperLike}
+            delayLongPress={400}
+            hitSlop={6}
+          >
             <Ionicons
-              name={liked ? "heart" : "heart-outline"}
+              name={superLiked ? "heart-circle" : liked ? "heart" : "heart-outline"}
               size={18}
-              color={liked ? "#ff4466" : "#fff"}
+              color={superLiked ? "#FFD700" : liked ? "#ff4466" : "#fff"}
             />
           </Pressable>
-          <Pressable style={styles.quickBtn} onPress={handleBookmark}>
+          <Pressable
+            style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.7, transform: [{ scale: 0.85 }] }]}
+            onPress={handleBookmark}
+            hitSlop={6}
+          >
             <Ionicons
               name={bookmarked ? "bookmark" : "bookmark-outline"}
               size={18}
@@ -326,6 +359,24 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: Colors.bgCard,
     margin: GAP / 2,
+  },
+  thumbnailContainer: {
+    position: "relative",
+    overflow: "hidden",
+  },
+  loadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1,
+    backgroundColor: Colors.bgTertiary,
+  },
+  thumbnailImage: {
+    position: "absolute",
+    top: 0,
+    left: 0,
   },
   image: {
     width: "100%",
@@ -429,4 +480,5 @@ const styles = StyleSheet.create({
   },
 });
 
-export { NUM_COLUMNS, GAP };
+export { GAP, NUM_COLUMNS };
+

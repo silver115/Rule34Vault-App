@@ -115,8 +115,14 @@ export async function sendLocalNotification(title: string, body: string, data?: 
 export async function registerWithPushServer(
   pushToken: string,
   authToken: string
-): Promise<boolean> {
+): Promise<{ ok: boolean; error?: string }> {
+  if (!PUSH_SERVER_URL) {
+    console.error("[push] PUSH_SERVER_URL is not configured");
+    return { ok: false, error: "Push server URL not configured" };
+  }
   try {
+    console.log("[push] Registering with push server:", PUSH_SERVER_URL);
+    console.log("[push] Token type:", typeof pushToken, "length:", pushToken?.length);
     const resp = await fetch(`${PUSH_SERVER_URL}/api/register`, {
       method: "POST",
       headers: {
@@ -125,11 +131,14 @@ export async function registerWithPushServer(
       },
       body: JSON.stringify({ pushToken }),
     });
+    console.log("[push] Server response status:", resp.status);
     const data = await resp.json();
-    return data.ok === true;
-  } catch (e) {
-    console.error("Failed to register with push server:", e);
-    return false;
+    console.log("[push] Server response body:", JSON.stringify(data));
+    if (data.ok === true) return { ok: true };
+    return { ok: false, error: data.error || `HTTP ${resp.status}` };
+  } catch (e: any) {
+    console.error("[push] Failed to register with push server:", e?.message || e);
+    return { ok: false, error: e?.message || "Network error" };
   }
 }
 
@@ -140,6 +149,7 @@ export async function registerWithPushServer(
 export async function unregisterFromPushServer(
   authToken: string
 ): Promise<boolean> {
+  if (!PUSH_SERVER_URL) return true; // nothing to unregister from
   try {
     const resp = await fetch(`${PUSH_SERVER_URL}/api/unregister`, {
       method: "POST",
@@ -151,8 +161,8 @@ export async function unregisterFromPushServer(
     });
     const data = await resp.json();
     return data.ok === true;
-  } catch (e) {
-    console.error("Failed to unregister from push server:", e);
+  } catch (e: any) {
+    console.error("[push] Failed to unregister:", e?.message || e);
     return false;
   }
 }

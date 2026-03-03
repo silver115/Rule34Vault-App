@@ -908,14 +908,12 @@ async function pollAllUsers() {
   const users = stmtGetEnabled.all();
   if (users.length === 0) return;
 
-  console.log(`[poll] Checking ${users.length} user(s)...`);
+  console.log(`[poll] Checking ${users.length} user(s) concurrently...`);
 
-  // Process users sequentially to avoid hammering the API
-  for (const user of users) {
-    await checkFeedForUser(user);
-    // Small delay between users
-    await new Promise((r) => setTimeout(r, 1000));
-  }
+  // Poll all users in parallel — each request uses its own JWT so there is no
+  // shared rate-limit concern, and concurrency cuts total cycle time from
+  // (N × ~2 s) down to ~2 s regardless of user count.
+  await Promise.allSettled(users.map((user) => checkFeedForUser(user)));
 }
 
 // Start polling

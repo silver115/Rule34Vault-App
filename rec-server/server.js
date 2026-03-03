@@ -17,11 +17,36 @@ const DIVERSITY_ARTIST_CAP = parseInt(process.env.DIVERSITY_ARTIST_CAP || "3", 1
 const DIVERSITY_CHAR_CAP   = parseInt(process.env.DIVERSITY_CHAR_CAP || "5", 10);
 const BANDIT_PRIOR_ALPHA   = parseInt(process.env.BANDIT_PRIOR_ALPHA || "1", 10);
 const BANDIT_PRIOR_BETA    = parseInt(process.env.BANDIT_PRIOR_BETA || "10", 10);
-const INCREMENTAL_TTL_MS  = parseInt(process.env.INCREMENTAL_TTL    || "300000",   10); // 5 min — check for new likes/bookmarks
+const INCREMENTAL_TTL_MS  = parseInt(process.env.INCREMENTAL_TTL    || "60000",    10); // 60s — check for new likes/bookmarks
 const FULL_REBUILD_TTL_MS = parseInt(process.env.FULL_REBUILD_TTL   || "86400000",  10); // 24 hours — full profile rebuild
 const SEEN_SUPPRESSION_DAYS = parseInt(process.env.SEEN_SUPPRESSION_DAYS || "30", 10); // days to suppress already-seen posts
 const MAX_HISTORY_PAGES   = parseInt(process.env.MAX_HISTORY_PAGES  || "100",      10); // max pages per history fetch on full rebuild (100×50=5000 posts)
 const ADMIN_TOKEN         = process.env.ADMIN_TOKEN || ""; // optional: protect /admin endpoints
+
+// ── Session momentum (in-memory, resets on server restart) ──────────
+// Tracks per-user engagement quality within the current session.
+// sessionState: { viewCount, engagedCount, sessionStart, lastSignalAt }
+const sessionMap = new Map(); // userId → sessionState
+const SESSION_TIMEOUT_MS  = 30 * 60 * 1000; // 30 min inactivity = new session
+const ENGAGED_THRESHOLD_S = 15;             // >= 15s duration = "engaged" view
+
+function getSession(userId) {
+  const now = Date.now();
+  let s = sessionMap.get(userId);
+  if (!s || (now - s.lastSignalAt) > SESSION_TIMEOUT_MS) {
+    s = { viewCount: 0, engagedCount: 0, sessionStart: now, lastSignalAt: now };
+    sessionMap.set(userId, s);
+  }
+  return s;
+}
+
+function sessionMomentumMultiplier(session) {
+  if (session.viewCount < 3) return 1.0; // not enough data yet
+  const engageRatio = session.engagedCount / session.viewCount;
+  if (engageRatio > 0.5) return 1.15;  // active deep-watch session → boost signals
+  if (engageRatio < 0.2) return 0.6;   // browse session → dampen signals
+  return 1.0;
+}
 
 // ── Database ─────────────────────────────────────────────────────────
 const dbPath = path.join(__dirname, "data", "rec.db");
@@ -222,21 +247,20 @@ async function jwtAuth(req, res, next) {
 // ── R34 API helpers ──────────────────────────────────────────────────
 const TAG_TYPE_WEIGHT = { 8: 5, 4: 4, 2: 3, 1: 1 };
 
-async function r34Post(jwt, endpoint, body, timeoutMs = 12000) {
+async function r34Fetch(jwt, method, endpoint, body = null, timeoutMs = 12000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const r = await fetch(`${R34_BASE}/api/v2${endpoint}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${jwt}`,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(body),
+    const opts = {
+      method,
+      headers: { Authorization: `Bearer ${jwt}`, Accept: "application/json" },
       signal: ctrl.signal,
-    });
-    clearTimeout(t);
+    };
+    if (body !== null) {
+      opts.headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
+    }
+    const r = await fetch(`${R34_BASE}/api/v2${endpoint}`, opts);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   } finally {
@@ -244,21 +268,8 @@ async function r34Post(jwt, endpoint, body, timeoutMs = 12000) {
   }
 }
 
-async function r34Get(jwt, endpoint, timeoutMs = 10000) {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const r = await fetch(`${R34_BASE}/api/v2${endpoint}`, {
-      headers: { Authorization: `Bearer ${jwt}`, Accept: "application/json" },
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return await r.json();
-  } finally {
-    clearTimeout(t);
-  }
-}
+const r34Post = (jwt, endpoint, body, ms) => r34Fetch(jwt, "POST", endpoint, body, ms);
+const r34Get  = (jwt, endpoint, ms)    => r34Fetch(jwt, "GET",  endpoint, null, ms ?? 10000);
 
 // Paginate through posts; stop early if we hit an already-seen post ID (incremental)
 async function fetchAllPaginated(jwt, endpoint, maxPages = 10, stopAtId = 0) {
@@ -393,29 +404,27 @@ function updateIdfForPosts(posts) {
 }
 
 // ── Thompson Sampling ───────────────────────────────────────────────
+// Hoisted helpers (module-level so they aren't re-created on every sampleBeta call)
+function _tsRandn() {
+  let u, v, s;
+  do { u = Math.random() * 2 - 1; v = Math.random() * 2 - 1; s = u * u + v * v; } while (s >= 1 || s === 0);
+  return u * Math.sqrt(-2 * Math.log(s) / s);
+}
+function _tsGamma(shape) {
+  if (shape < 1) return _tsGamma(shape + 1) * Math.pow(Math.random(), 1 / shape);
+  const d = shape - 1 / 3;
+  const c = 1 / Math.sqrt(9 * d);
+  while (true) {
+    let x, v;
+    do { x = _tsRandn(); v = 1 + c * x; } while (v <= 0);
+    v = v * v * v;
+    const u = Math.random();
+    if (u < 1 - 0.0331 * (x * x) * (x * x)) return d * v;
+    if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
+  }
+}
 function sampleBeta(alpha, beta) {
-  // Marsaglia & Tsang's method for Gamma, then Beta = Ga/(Ga+Gb)
-  function sampleGamma(shape) {
-    if (shape < 1) return sampleGamma(shape + 1) * Math.pow(Math.random(), 1 / shape);
-    const d = shape - 1 / 3;
-    const c = 1 / Math.sqrt(9 * d);
-    while (true) {
-      let x, v;
-      do { x = randn(); v = 1 + c * x; } while (v <= 0);
-      v = v * v * v;
-      const u = Math.random();
-      if (u < 1 - 0.0331 * (x * x) * (x * x)) return d * v;
-      if (Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v;
-    }
-  }
-  function randn() {
-    let u, v, s;
-    do { u = Math.random() * 2 - 1; v = Math.random() * 2 - 1; s = u * u + v * v; } while (s >= 1 || s === 0);
-    return u * Math.sqrt(-2 * Math.log(s) / s);
-  }
-  const x = sampleGamma(alpha);
-  const y = sampleGamma(beta);
-  return x / (x + y);
+  return _tsGamma(alpha) / (_tsGamma(alpha) + _tsGamma(beta));
 }
 
 function sampleArmsForUser(userId) {
@@ -595,8 +604,8 @@ function enforceDiversity(posts) {
   });
 }
 
-async function buildRecommendations(userId, jwt, tagScore, seenSet, take, page) {
-  // V3: Thompson Sampling for tag selection
+async function buildRecommendations(userId, jwt, tagScore, seenSet, take, page, totalSeen = 0) {
+  // V7: Thompson Sampling for tag selection
   const sampledArms = sampleArmsForUser(userId);
   const rankedTags = sampledArms.length > 0
     ? sampledArms.map((a) => a.tag)
@@ -606,49 +615,52 @@ async function buildRecommendations(userId, jwt, tagScore, seenSet, take, page) 
     return []; // No interest data yet — caller will show empty/fallback
   }
 
-  // Use top-20 tags for maximum interest coverage
   const topSampled = rankedTags.slice(0, 20);
   const cooccPairs = stmtGetCooccurrence.all(userId, 5);
 
-  const coreTags      = topSampled.slice(0, 2);   // top 2 — highest confidence
-  const discoveryTags = topSampled.slice(2, 6);   // tags 3-6 — adjacent interests
-  const exploreTags   = topSampled.slice(6, 14);  // tags 7-14 — broader exploration
+  // V7: Split top 4 tags into individual pools so the interleave produces
+  // tag1-tag2-tag3-tag4-discovery-explore alternation instead of a block of
+  // 10 posts all sharing the same 2 core tags.
+  const pool0Tags = topSampled[0] ? [topSampled[0]] : [];
+  const pool1Tags = topSampled[1] ? [topSampled[1]] : [];
+  const pool2Tags = topSampled[2] ? [topSampled[2]] : [];
+  const pool3Tags = topSampled[3] ? [topSampled[3]] : [];
+  const discoveryTags = topSampled.slice(4, 10);  // tags 5-10 — adjacent interests
+  const exploreTags   = topSampled.slice(10, 20); // tags 11-20 — broader exploration
   const cooccTags     = cooccPairs.length > 0 ? [cooccPairs[0].tag_a, cooccPairs[0].tag_b] : [];
-  const fetchN = Math.ceil(take * 8); // fetch 8x candidates — plenty to filter after seen dedup
 
-  // V4: 4 interest-only candidate pools (no trending/random)
+  // Smaller per-pool fetch since we now have 7 pools; 5x is enough with dedup
+  const fetchN = Math.ceil(take * 5);
+  // Random skip: offset into the result set so consecutive loads don't return
+  // the same deterministic top-N posts every time.
+  const rSkip = (max = 300) => Math.floor(Math.random() * max);
+
+  // 7 parallel pool fetches — individual tags prevent clustering
   const results = await Promise.allSettled([
-    // A: Core — strongest Thompson-sampled tags
-    coreTags.length
-      ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: coreTags, sortBy: 1 })
-          .then((r) => r?.items ?? [])
-      : Promise.resolve([]),
-    // B: Discovery — adjacent interests
-    discoveryTags.length
-      ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: discoveryTags, sortBy: 1 })
-          .then((r) => r?.items ?? [])
-      : Promise.resolve([]),
-    // C: Explore — deeper exploration tags
-    exploreTags.length
-      ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: exploreTags, sortBy: 1 })
-          .then((r) => r?.items ?? [])
-      : Promise.resolve([]),
-    // D: Co-occurrence — tag pairs user historically likes together
-    cooccTags.length === 2
-      ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: cooccTags, sortBy: 1 })
-          .then((r) => r?.items ?? [])
-      : Promise.resolve([]),
+    pool0Tags.length ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: pool0Tags, sortBy: 1, skip: rSkip() }).then(r => r?.items ?? []) : Promise.resolve([]),
+    pool1Tags.length ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: pool1Tags, sortBy: 1, skip: rSkip() }).then(r => r?.items ?? []) : Promise.resolve([]),
+    pool2Tags.length ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: pool2Tags, sortBy: 1, skip: rSkip() }).then(r => r?.items ?? []) : Promise.resolve([]),
+    pool3Tags.length ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: pool3Tags, sortBy: 1, skip: rSkip() }).then(r => r?.items ?? []) : Promise.resolve([]),
+    discoveryTags.length ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: discoveryTags, sortBy: 1, skip: rSkip() }).then(r => r?.items ?? []) : Promise.resolve([]),
+    exploreTags.length   ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: exploreTags,   sortBy: 1, skip: rSkip(150) }).then(r => r?.items ?? []) : Promise.resolve([]),
+    cooccTags.length === 2 ? r34Post(jwt, "/post/search/root", { take: fetchN, includeTags: cooccTags, sortBy: 1, skip: rSkip() }).then(r => r?.items ?? []) : Promise.resolve([]),
   ]);
 
   const pools = results.map((r) => r.status === "fulfilled" ? r.value : []);
 
-  // Pool ratios: Core 35%, Discovery 30%, Explore 20%, Co-occurrence 15%
-  const poolMaxes = [
-    Math.ceil(take * 0.35),
-    Math.ceil(take * 0.30),
-    Math.ceil(take * 0.20),
-    Math.ceil(take * 0.15),
-  ];
+  // Dynamic 7-pool ratios: max single-tag share is now ≤ 0.16 (was 0.50 for 2 bundled tags)
+  // New users exploit top tags more; veterans shift weight toward exploration.
+  let ratios;
+  if (totalSeen < 50) {
+    ratios = [0.16, 0.14, 0.12, 0.10, 0.24, 0.14, 0.10]; // new — exploit known tags
+  } else if (totalSeen < 500) {
+    ratios = [0.14, 0.12, 0.10, 0.10, 0.24, 0.20, 0.10]; // growing — balanced
+  } else if (totalSeen < 2000) {
+    ratios = [0.12, 0.10, 0.10, 0.08, 0.24, 0.26, 0.10]; // veteran — more exploration
+  } else {
+    ratios = [0.10, 0.08, 0.08, 0.07, 0.22, 0.35, 0.10]; // saturated — max exploration
+  }
+  const poolMaxes = ratios.map(r => Math.ceil(take * r));
 
   const globalSeen = new Set(seenSet);
 
@@ -674,7 +686,7 @@ async function buildRecommendations(userId, jwt, tagScore, seenSet, take, page) 
   // Interleave all pools → diversity caps → shuffle
   const interleaved = fyInterleave(...pickedPools);
   const diverse = enforceDiversity(interleaved);
-  fyShuffleWindow(diverse, 5);
+  fyShuffleWindow(diverse, 10);
 
   // If diversity filtering removed too many, backfill from core interest pool
   if (diverse.length < take) {
@@ -710,7 +722,7 @@ app.get("/api/health", (req, res) => {
   const arms    = db.prepare("SELECT COUNT(*) as c FROM bandit_arms").get().c;
   const idfDocs  = stmtGetTotalDocs.get()?.value ?? 0;
   const dbSize = (() => { try { return fs.statSync(dbPath).size; } catch { return 0; } })();
-  res.json({ status: "ok", version: 5, profiledUsers: users, seenRecords: seen, signals, banditArms: arms, idfDocs, dbSize });
+  res.json({ status: "ok", version: 6, profiledUsers: users, seenRecords: seen, signals, banditArms: arms, idfDocs, dbSize });
 });
 
 // Get recommendations
@@ -731,7 +743,7 @@ app.post("/api/recommendations", jwtAuth, async (req, res) => {
     const totalSeen = stmtSeenCount.get(userId).c;
     const page      = Math.floor(totalSeen / Math.max(take, 1));
 
-    const posts = await buildRecommendations(userId, req.r34jwt, tagScore, seenSet, take, page);
+    const posts = await buildRecommendations(userId, req.r34jwt, tagScore, seenSet, take, page, totalSeen);
 
     if (posts.length === 0) {
       return res.json({ posts: [], topTags: [] });
@@ -779,17 +791,25 @@ app.post("/api/signal", jwtAuth, async (req, res) => {
   try {
     stmtLogSignal.run(userId, postId, signal);
 
-    // Ensure the user has a profile row so they appear in the admin UI and
-    // refresh their interest profile when meaningful signals arrive.
-    const shouldForceRefresh = ["like", "bookmark", "super_like"].includes(signal);
+    // Always load whatever profile we already have for the immediate delta update below.
+    // For like/bookmark/super_like also trigger an incremental rebuild in the background
+    // so the next recommendations batch reflects the updated history — but don't block the
+    // response on the API round-trip (fire-and-forget).
     let profileRow = stmtGetProfile.get(userId);
-    if (!profileRow || shouldForceRefresh) {
+    const isActionSignal = ["like", "bookmark", "super_like"].includes(signal);
+    if (!profileRow) {
+      // First-time user: must wait for initial profile build before we can apply deltas
       try {
-        await refreshProfile(userId, req.r34jwt, !!profileRow, username);
+        await refreshProfile(userId, req.r34jwt, false, username);
         profileRow = stmtGetProfile.get(userId);
       } catch (err) {
-        console.warn(`[signal] Failed to refresh profile for user ${userId}:`, err.message);
+        console.warn(`[signal] Failed to build initial profile for user ${userId}:`, err.message);
       }
+    } else if (isActionSignal) {
+      // Profile exists — kick off incremental refresh in background, respond immediately
+      refreshProfile(userId, req.r34jwt, true, username).catch((err) =>
+        console.warn(`[signal] Background refresh failed for user ${userId}:`, err.message)
+      );
     }
 
     // V2: Update bandit arms + profile based on signal
@@ -797,29 +817,76 @@ app.post("/api/signal", jwtAuth, async (req, res) => {
       let profile = {};
       try { profile = JSON.parse(profileRow?.tags_json ?? "{}"); } catch { /* ok */ }
 
-      // V3: Signal processing with view_duration support
-      const SIGNAL_ALPHA = { like: 1.0, bookmark: 2.0, super_like: 3.0, complete: 0.5, skip: 0, view_duration: 0 };
-      const SIGNAL_BETA  = { like: 0, bookmark: 0, super_like: 0, complete: 0, skip: 1.5, view_duration: 0 };
-      const PROFILE_DELTA = { like: 1.0, bookmark: 1.5, super_like: 2.5, complete: 0.5, skip: -0.8, view_duration: 0 };
+      // V6: Signal processing — research-backed weights
+      // skip weakened: a pass isn't necessarily "I hate this", just "not now"
+      const SIGNAL_ALPHA  = { like: 1.0, bookmark: 2.0, super_like: 3.0, complete: 0.5, skip: 0,   view_duration: 0, attention: 0 };
+      const SIGNAL_BETA   = { like: 0,   bookmark: 0,   super_like: 0,   complete: 0,   skip: 0.5, view_duration: 0, attention: 0 };
+      const PROFILE_DELTA = { like: 1.0, bookmark: 1.5, super_like: 2.5, complete: 0.5, skip: -0.25, view_duration: 0, attention: 0 };
 
-      // View duration: scale alpha/profile by how long user viewed
       const duration = req.body.duration ?? 0; // seconds
+
+      // Session momentum: quality multiplier based on this session's engagement ratio
+      const session = getSession(userId);
+      session.lastSignalAt = Date.now();
+      const momentumMult = sessionMomentumMultiplier(session);
+
+      // View duration: legacy signal from post-detail view (not TikTok mode)
       if (signal === "view_duration" && duration > 0) {
-        // Short view (<3s) = skip-like, medium (3-15s) = mild interest, long (>15s) = strong interest
         if (duration < 3) {
-          SIGNAL_BETA.view_duration = 0.5;
-          PROFILE_DELTA.view_duration = -0.2;
+          // < 3s = no meaningful data, skip entirely
         } else if (duration < 15) {
-          SIGNAL_ALPHA.view_duration = 0.3 + duration * 0.05;
-          PROFILE_DELTA.view_duration = 0.3;
+          SIGNAL_ALPHA.view_duration = (0.3 + duration * 0.05) * momentumMult;
+          PROFILE_DELTA.view_duration = 0.3 * momentumMult;
         } else {
-          SIGNAL_ALPHA.view_duration = 1.0 + Math.min(duration, 60) * 0.02;
-          PROFILE_DELTA.view_duration = 0.8;
+          SIGNAL_ALPHA.view_duration = (1.0 + Math.min(duration, 60) * 0.02) * momentumMult;
+          PROFILE_DELTA.view_duration = 0.8 * momentumMult;
         }
       }
 
-      const alphaDelta   = SIGNAL_ALPHA[signal] ?? 0;
-      const betaDelta    = SIGNAL_BETA[signal]  ?? 0;
+      // V6 Attention signal: tiered watch-depth scoring
+      // Research basis (TikTok/YouTube Shorts): treat as tiers not a continuous score.
+      // App guarantees duration >= 3s before sending — no negative branch needed.
+      // Tiers:  brief (3-10s) → engaged (10-30s) → highly-engaged (30-60s) → loved (60s+)
+      // Replay multiplier: each loop adds ×1.5 (capped ×3) — TikTok's #1 engagement signal
+      let strongAttention = false; // flag for incremental profile refresh
+      if (signal === "attention" && duration >= 3) {
+        const completionRate = Math.max(0, Math.min(1, req.body.completionRate ?? 1.0));
+        const liked    = req.body.liked === true;
+        const replays  = Math.max(0, Math.min(5, req.body.replays ?? 0));
+
+        // Base tier by duration + completion
+        let baseAlpha   = 0;
+        let baseProfile = 0;
+        if (duration >= 60 || completionRate >= 0.90) {
+          baseAlpha = 2.5; baseProfile = 2.0; // loved it
+        } else if (duration >= 30 || completionRate >= 0.60) {
+          baseAlpha = 1.5; baseProfile = 1.2; // highly engaged
+        } else if (duration >= 10 || completionRate >= 0.30) {
+          baseAlpha = 0.8; baseProfile = 0.6; // engaged
+        } else {
+          baseAlpha = 0.3; baseProfile = 0.2; // brief interest (3-10s, < 30% completion)
+        }
+
+        // Like multiplier: action confirms interest (TikTok research: like + watch = top signal)
+        const likeMult   = liked ? 1.8 : 1.0;
+        // Replay multiplier: each replay ×1.5, capped at ×3.0
+        const replayMult = replays > 0 ? Math.min(1.5 * replays, 3.0) : 1.0;
+
+        SIGNAL_ALPHA.attention  = baseAlpha   * likeMult * replayMult * momentumMult;
+        PROFILE_DELTA.attention = baseProfile * likeMult * replayMult * momentumMult;
+
+        // Track session engagement
+        session.viewCount++;
+        if (duration >= ENGAGED_THRESHOLD_S) session.engagedCount++;
+
+        // Flag for incremental refresh if highly engaged (will rebuild profile sooner)
+        strongAttention = SIGNAL_ALPHA.attention >= 1.5;
+
+        console.log(`[signal/v6] Attention post ${postId}: dur=${duration.toFixed(1)}s completion=${completionRate.toFixed(2)} liked=${liked} replays=${replays} → α=${SIGNAL_ALPHA.attention.toFixed(2)} Δprofile=${PROFILE_DELTA.attention.toFixed(2)} momentum=${momentumMult.toFixed(2)}`);
+      }
+
+      const alphaDelta   = SIGNAL_ALPHA[signal]  ?? 0;
+      const betaDelta    = SIGNAL_BETA[signal]   ?? 0;
       const profileDelta = PROFILE_DELTA[signal] ?? 0;
 
       const updateAll = db.transaction(() => {
@@ -838,12 +905,19 @@ app.post("/api/signal", jwtAuth, async (req, res) => {
           }
         }
         stmtUpsertProfile.run(userId, username, JSON.stringify(profile));
-        // Record co-occurrence for positive signals
-        if (signal === "like" || signal === "bookmark" || signal === "super_like") {
+        // Record co-occurrence for strong positive signals
+        if (signal === "like" || signal === "bookmark" || signal === "super_like" ||
+            (signal === "attention" && alphaDelta >= 1.0)) {
           recordCooccurrence(userId, tags);
         }
       });
       updateAll();
+
+      // Trigger async incremental profile refresh for highly-engaged attention signals
+      // so the next recommendation batch reflects this session's strong interests immediately
+      if (strongAttention) {
+        refreshProfile(userId, req.r34jwt, true, username).catch(() => {});
+      }
     }
 
     res.json({ ok: true });
@@ -945,6 +1019,22 @@ app.get('/admin/user/:userId/signals', adminAuth, (req, res) => {
     `SELECT post_id, signal, created_at FROM signals WHERE user_id = ? ORDER BY id DESC LIMIT 30`
   ).all(userId);
   res.json(rows);
+});
+
+// Admin: decay all bandit arms toward prior (run weekly to allow taste evolution)
+// α shrinks by 8%, β by 4%, both floored at their prior values
+app.post('/admin/users/decay-arms', adminAuth, (req, res) => {
+  const allArms = db.prepare(`SELECT user_id, tag, alpha, beta FROM bandit_arms`).all();
+  const decay = db.transaction(() => {
+    for (const row of allArms) {
+      const newAlpha = Math.max(BANDIT_PRIOR_ALPHA, row.alpha * 0.92);
+      const newBeta  = Math.max(BANDIT_PRIOR_BETA,  row.beta  * 0.96);
+      stmtUpsertArm.run(row.user_id, row.tag, newAlpha, newBeta);
+    }
+  });
+  decay();
+  console.log(`[admin] Decayed ${allArms.length} bandit arms toward prior`);
+  res.json({ ok: true, armsDecayed: allArms.length });
 });
 
 // Admin: expire ALL profiles at once

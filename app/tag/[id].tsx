@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import { View, StyleSheet } from "react-native";
 import { useLocalSearchParams, useNavigation } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { StyleSheet, View } from "react-native";
 import api, { Post, SearchFilters } from "../../api/rule34vault";
-import { PostGrid } from "../../components/PostGrid";
 import { FilterBar } from "../../components/FilterBar";
+import { PostGrid } from "../../components/PostGrid";
 import { Colors } from "../../constants/theme";
 
 export default function TagPostsScreen() {
