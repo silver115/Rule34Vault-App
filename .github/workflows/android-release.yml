@@ -1,0 +1,81 @@
+name: Android APK Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build & Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build APK via EAS
+        run: eas build -p android --profile preview --non-interactive --no-wait --json > build_output.json
+        env:
+          EXPO_PUBLIC_REC_SERVER_URL: ${{ secrets.REC_SERVER_URL }}
+          EXPO_PUBLIC_PUSH_SERVER_URL: ${{ secrets.PUSH_SERVER_URL }}
+
+      - name: Wait for EAS build and download APK
+        id: download
+        run: |
+          BUILD_ID=$(node -e "const d=require('./build_output.json'); console.log(Array.isArray(d)?d[0].id:d.id)")
+          echo "Build ID: $BUILD_ID"
+          echo "Waiting for EAS build to finish..."
+          eas build:view $BUILD_ID --json > /tmp/build_status.json
+          for i in $(seq 1 40); do
+            STATUS=$(node -e "const d=require('/tmp/build_status.json'); console.log(d.status)")
+            echo "Status: $STATUS (attempt $i)"
+            if [ "$STATUS" = "FINISHED" ]; then
+              APK_URL=$(node -e "const d=require('/tmp/build_status.json'); console.log(d.artifacts.buildUrl)")
+              echo "APK URL: $APK_URL"
+              curl -L "$APK_URL" -o rule34vault-${{ github.ref_name }}.apk
+              echo "apk_file=rule34vault-${{ github.ref_name }}.apk" >> $GITHUB_OUTPUT
+              break
+            fi
+            if [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELLED" ]; then
+              echo "Build failed with status: $STATUS"
+              exit 1
+            fi
+            sleep 30
+            eas build:view $BUILD_ID --json > /tmp/build_status.json
+          done
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Rule34Vault ${{ github.ref_name }}
+          body: |
+            ## Rule34Vault ${{ github.ref_name }}
+
+            ### Install
+            1. Download `rule34vault-*.apk` below
+            2. On your Android device: **Settings → Install unknown apps** → allow your browser/file manager
+            3. Open the downloaded APK and install
+
+            ### Changes
+            See commit history for full changelog.
+          files: ${{ steps.download.outputs.apk_file }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
