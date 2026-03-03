@@ -1,9 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
 import { useNavigation } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Modal, Pressable, StatusBar, StyleSheet, Text, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import React, { useEffect, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import api, { Post, SearchFilters } from "../../api/rule34vault";
 import { FilterBar } from "../../components/FilterBar";
 import { PostGrid } from "../../components/PostGrid";
@@ -29,7 +28,6 @@ export default function BrowseScreen() {
   const [filters, setFilters] = useState<SearchFilters>({});
   const [feedType, setFeedType] = useState<FeedType>("recent");
   const [feedOpen, setFeedOpen] = useState(false);
-  const [fullscreenIndex, setFullscreenIndex] = useState<number | null>(null);
   const cursorRef = useRef<string | null>(null);
   const hasMoreRef = useRef(true);
   const isLoadingMoreRef = useRef(false);
@@ -129,11 +127,6 @@ export default function BrowseScreen() {
   const { viewingMode, setViewingMode } = useSettings();
   const isFocused = useIsFocused();
   const navigation = useNavigation();
-  const insets = useSafeAreaInsets();
-
-  const handlePostPress = useCallback((_post: Post, index: number) => {
-    setFullscreenIndex(index);
-  }, []);
 
   // Hide the top header when in TikTok mode for full immersion
   useEffect(() => {
@@ -247,38 +240,8 @@ export default function BrowseScreen() {
           isLoadingMore={isLoadingMore}
           onRefresh={() => doLoad(true)}
           onEndReached={() => doLoad(false)}
-          onPostPress={handlePostPress}
         />
       )}
-
-      {/* Full-screen TikTok player modal — opened when tapping a grid post */}
-      <Modal
-        visible={fullscreenIndex !== null}
-        animationType="slide"
-        statusBarTranslucent
-        onRequestClose={() => setFullscreenIndex(null)}
-      >
-        <View style={styles.fullscreenModal}>
-          <StatusBar hidden />
-          {fullscreenIndex !== null && (
-            <TikTokFeed
-              posts={posts.slice(fullscreenIndex)}
-              isLoading={false}
-              tabFocused={fullscreenIndex !== null}
-              onRefresh={() => doLoad(true)}
-              onLoadMore={() => doLoad(false)}
-            />
-          )}
-          {/* Close button — top-right, above safe area */}
-          <Pressable
-            style={[styles.modalCloseBtn, { top: insets.top + 12 }]}
-            onPress={() => setFullscreenIndex(null)}
-            hitSlop={12}
-          >
-            <Ionicons name="close" size={22} color="rgba(255,255,255,0.85)" />
-          </Pressable>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -352,20 +315,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: FontSize.sm,
     color: Colors.textSecondary,
-  },
-  fullscreenModal: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
-  modalCloseBtn: {
-    position: "absolute",
-    right: 14,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 50,
   },
 });

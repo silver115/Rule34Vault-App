@@ -1,5 +1,4 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ResizeMode, Video } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -28,6 +27,7 @@ import api, {
 } from "../../api/rule34vault";
 import { FilterBar } from "../../components/FilterBar";
 import { TagChip } from "../../components/TagChip";
+import { TikTokVideoControls } from "../../components/TikTokVideoControls";
 import { ZoomableImage } from "../../components/ZoomableImage";
 import { Colors, FontSize, getTagColor, Radius, Spacing } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
@@ -594,89 +594,22 @@ function PostPage({
             )}
           </View>
         ) : isVideo ? (
-          <>
-            {videoPlaying ? (
-              Platform.OS === "web" ? (
-                <video
-                  ref={(el: HTMLVideoElement | null) => { webVideoRef.current = el; }}
-                  src={mediaUrl}
-                  poster={videoPosterUrl}
-                  style={{ width: screenW, height: displayH, objectFit: "contain", backgroundColor: "#000" }}
-                  controls
-                  muted={isMuted}
-                  loop
-                  autoPlay={isActive}
-                  onError={() => {
-                    setMediaError(true);
-                    handleMediaFailure();
-                  }}
-                  onCanPlay={handleMediaSuccess}
-                />
-              ) : (
-                <Video
-                  ref={videoRef}
-                  source={{ uri: mediaUrl }}
-                  style={{ width: screenW, height: displayH }}
-                  resizeMode={ResizeMode.CONTAIN}
-                  shouldPlay={isActive}
-                  isLooping
-                  useNativeControls
-                  isMuted={isMuted}
-                  onError={() => {
-                    setMediaError(true);
-                    handleMediaFailure();
-                  }}
-                />
-              )
-            ) : (
-              <Pressable
-                style={{ width: screenW, height: displayH, justifyContent: "center", alignItems: "center", backgroundColor: "#000" }}
-                onPress={() => setVideoPlaying(true)}
-              >
-                {Platform.OS === "web" ? (
-                  <>
-                    {!thumbLoaded && (
-                      <View style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 1 }}>
-                        <ActivityIndicator size="large" color="#fff" />
-                      </View>
-                    )}
-                    <img
-                      src={thumbUrl}
-                      style={{ width: screenW, height: displayH, objectFit: "contain", display: "block" }}
-                      onError={(e) => {
-                        setThumbLoaded(true);
-                        const img = e.target as HTMLImageElement;
-                        img.src = videoPosterUrl;
-                      }}
-                      onLoad={() => setThumbLoaded(true)}
-                    />
-                    <View style={styles.playOverlay}>
-                      <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.85)" />
-                    </View>
-                  </>
-                ) : (
-                  <>
-                    {!thumbLoaded && (
-                      <View style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 1 }}>
-                        <ActivityIndicator size="large" color="#fff" />
-                      </View>
-                    )}
-                    <Image
-                      source={{ uri: thumbUrl }}
-                      style={{ width: screenW, height: displayH }}
-                      contentFit="contain"
-                      cachePolicy="memory-disk"
-                      onError={() => setThumbLoaded(true)}
-                      onLoad={() => setThumbLoaded(true)}
-                    />
-                    <View style={styles.playOverlay}>
-                      <Ionicons name="play-circle" size={64} color="rgba(255,255,255,0.85)" />
-                    </View>
-                  </>
-                )}
-              </Pressable>
-            )}
-          </>
+          <TikTokVideoControls
+            post={post}
+            mediaUrl={mediaUrl}
+            videoPosterUrl={videoPosterUrl}
+            screenW={screenW}
+            screenH={screenH}
+            displayH={displayH}
+            isActive={isActive}
+            isMuted={isMuted}
+            onToggleMute={onToggleMute}
+            onVideoError={() => {
+              setMediaError(true);
+              handleMediaFailure();
+            }}
+            onVideoSuccess={handleMediaSuccess}
+          />
         ) : isTallImage ? (
           <>
             <ZoomableImage
