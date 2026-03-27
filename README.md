@@ -1,6 +1,9 @@
 # Rule34Vault App
 
 A modern Android app for browsing Rule34Vault, built with React Native + Expo. Inspired by Danbooru/e621 browsing apps.
+To improve your "For You" feed, this app collects anonymous usage data for personalized suggestions.
+
+
 
 ## Features
 
