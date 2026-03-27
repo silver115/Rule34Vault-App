@@ -1,537 +1,354 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>R34Vault · Rec Admin</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg: #0d0d10; --card: #16161c; --border: #26263a; --border2: #1e1e2e;
-      --accent: #7c3aed; --accent2: #a78bfa; --danger: #dc2626;
-      --warn: #d97706; --text: #e2e8f0; --muted: #94a3b8; --faint: #475569;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: var(--bg); color: var(--text);
-      min-height: 100vh; font-size: 14px;
-    }
-
-    /* ── Top bar ── */
-    .topbar {
-      position: sticky; top: 0; z-index: 50;
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 0 24px; height: 52px;
-      background: var(--card); border-bottom: 1px solid var(--border);
-    }
-    .topbar-brand { display: flex; align-items: center; gap: 9px; }
-    .topbar-logo {
-      width: 26px; height: 26px; border-radius: 7px;
-      background: linear-gradient(135deg, var(--accent), #4f46e5);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 800; color: #fff;
-    }
-    .topbar-title { font-size: 14px; font-weight: 700; color: var(--accent2); }
-    .topbar-right { display: flex; align-items: center; gap: 10px; }
-
-    .status-badge {
-      display: flex; align-items: center; gap: 6px;
-      padding: 4px 10px; border-radius: 100px;
-      background: var(--border2); font-size: 12px; color: var(--muted);
-    }
-    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
-    .dot.online { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
-    .dot.offline { background: #ef4444; }
-
-    /* ── Token bar ── */
-    .token-bar {
-      display: none; align-items: center; gap: 8px;
-      padding: 8px 24px; background: #1a1a24;
-      border-bottom: 1px solid var(--border);
-    }
-    .token-bar.show { display: flex; }
-    .token-bar label { font-size: 12px; color: var(--muted); white-space: nowrap; }
-    .token-bar input {
-      flex: 1; max-width: 300px; padding: 5px 10px;
-      background: var(--bg); border: 1px solid var(--border);
-      border-radius: 7px; color: var(--text); font-size: 13px;
-    }
-    .token-bar input:focus { outline: none; border-color: var(--accent); }
-
-    /* ── Buttons ── */
-    .btn {
-      display: inline-flex; align-items: center; gap: 5px;
-      padding: 6px 13px; border: none; border-radius: 7px;
-      font-size: 12px; font-weight: 600; cursor: pointer;
-      transition: filter 0.15s, opacity 0.15s; white-space: nowrap;
-    }
-    .btn:hover { filter: brightness(1.15); }
-    .btn:active { opacity: 0.75; }
-    .btn-primary  { background: var(--accent);  color: #fff; }
-    .btn-danger   { background: var(--danger);  color: #fff; }
-    .btn-warn     { background: var(--warn);    color: #fff; }
-    .btn-ghost    { background: var(--border2); color: var(--muted); }
-    .btn-ghost:hover { color: var(--text); }
-    .btn-sm { padding: 4px 9px; font-size: 11px; border-radius: 6px; }
-
-    /* ── Stats row ── */
-    .stats { display: flex; flex-wrap: wrap; gap: 10px; padding: 16px 24px 0; }
-    .stat {
-      flex: 1; min-width: 110px;
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 11px; padding: 13px 16px;
-    }
-    .stat-label {
-      font-size: 10px; font-weight: 600; color: var(--faint);
-      text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px;
-    }
-    .stat-val { font-size: 24px; font-weight: 800; color: var(--accent2); line-height: 1; }
-    .stat-sub { font-size: 11px; color: var(--faint); margin-top: 2px; }
-
-    /* ── Main ── */
-    .main { padding: 16px 24px 40px; }
-    .section-hdr {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 14px;
-    }
-    .section-hdr h2 {
-      font-size: 11px; font-weight: 700; color: var(--faint);
-      text-transform: uppercase; letter-spacing: 0.7px;
-    }
-
-    /* ── User grid ── */
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
-      gap: 12px;
-    }
-
-    .ucard {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 13px; padding: 15px 16px;
-      transition: border-color 0.2s;
-    }
-    .ucard:hover { border-color: #4c1d9566; }
-
-    .ucard-hdr {
-      display: flex; align-items: flex-start;
-      justify-content: space-between; margin-bottom: 8px;
-    }
-    .uid { font-size: 15px; font-weight: 700; color: var(--text); }
-    .uid small { font-size: 11px; color: var(--faint); font-weight: 400; margin-left: 4px; }
-
-    .umeta { display: flex; gap: 14px; margin-bottom: 9px; }
-    .umeta-item { font-size: 12px; color: var(--faint); }
-    .umeta-item b { color: var(--muted); font-weight: 600; }
-
-    .refreshed { font-size: 11px; color: var(--faint); margin-bottom: 9px; }
-
-    .tags-wrap { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; min-height: 22px; }
-    .tag {
-      padding: 2px 8px; border-radius: 100px; font-size: 11px; font-weight: 500;
-      background: #1e1535; border: 1px solid #3b1a6a; color: var(--accent2);
-    }
-    .tag-more {
-      padding: 2px 8px; border-radius: 100px; font-size: 11px;
-      background: var(--border2); color: var(--faint); cursor: pointer;
-    }
-    .tag-more:hover { color: var(--muted); }
-
-    .uactions { display: flex; gap: 6px; flex-wrap: wrap; }
-
-    /* ── Empty / loading ── */
-    .empty { text-align: center; padding: 60px 20px; color: var(--faint); }
-    .spinner {
-      width: 26px; height: 26px;
-      border: 3px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%; margin: 0 auto 12px;
-      animation: spin 0.65s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Modal ── */
-    .backdrop {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,0.7); z-index: 100;
-      align-items: center; justify-content: center; padding: 16px;
-    }
-    .backdrop.open { display: flex; }
-    .modal {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 16px; width: 100%; max-width: 480px;
-      max-height: 82vh; display: flex; flex-direction: column;
-    }
-    .modal-hdr {
-      padding: 15px 18px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: space-between;
-      flex-shrink: 0;
-    }
-    .modal-title { font-size: 14px; font-weight: 700; }
-    .modal-close {
-      background: none; border: none; color: var(--faint);
-      cursor: pointer; font-size: 18px; line-height: 1; padding: 2px;
-    }
-    .modal-close:hover { color: var(--text); }
-    .modal-body { padding: 16px 18px; overflow-y: auto; flex: 1; }
-
-    .profile-meta {
-      display: flex; flex-wrap: wrap; gap: 12px;
-      margin-bottom: 14px; padding-bottom: 12px;
-      border-bottom: 1px solid var(--border2);
-    }
-    .profile-meta-item { font-size: 12px; color: var(--faint); }
-    .profile-meta-item b { color: var(--accent2); }
-
-    .tag-row {
-      display: flex; align-items: center; gap: 8px;
-      padding: 5px 0; border-bottom: 1px solid var(--border2);
-    }
-    .tag-row:last-child { border-bottom: none; }
-    .tag-name { font-size: 12px; color: var(--accent2); width: 160px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tag-bar-bg { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
-    .tag-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; }
-    .tag-score-val { font-size: 11px; color: var(--faint); width: 46px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-
-    /* ── Toast ── */
-    .toast {
-      position: fixed; bottom: 22px; right: 22px; z-index: 200;
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 10px; padding: 11px 16px; font-size: 13px;
-      max-width: 320px;
-      transform: translateY(60px); opacity: 0;
-      transition: transform 0.22s ease, opacity 0.22s ease;
-      pointer-events: none;
-    }
-    .toast.show { transform: translateY(0); opacity: 1; }
-    .toast.ok  { border-left: 3px solid #22c55e; }
-    .toast.err { border-left: 3px solid #ef4444; }
-    .toast.info { border-left: 3px solid var(--accent); }
-    .updated-txt { font-size: 11px; color: var(--faint); }
-    .username-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-    .username-tag { font-size: 12px; color: var(--muted); }
-    .visit-link { font-size: 11px; color: var(--accent2); text-decoration: none; padding: 1px 6px; border: 1px solid #3b1a6a; border-radius: 100px; background: #1e1535; }
-    .visit-link:hover { background: #2e2050; }
-    .tag-bar-fill { height: 100%; border-radius: 2px; background: var(--accent); }
-    .profile-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid var(--border2); }
-    .profile-meta-item { font-size: 12px; color: var(--faint); }
-    .profile-meta-item b { color: var(--accent2); }
-    .tag-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border2); }
-    .tag-row:last-child { border-bottom: none; }
-    .tag-name { font-size: 11px; color: var(--accent2); width: 150px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tag-bar-bg { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
-    .tag-score-val { font-size: 11px; color: var(--faint); width: 46px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-  </style>
-</head>
-<body>
-
-<!-- Top bar -->
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>R34Vault Rec Admin v8</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0d0d10;--card:#16161c;--border:#26263a;--border2:#1e1e2e;--accent:#7c3aed;--accent2:#a78bfa;--danger:#dc2626;--warn:#d97706;--success:#22c55e;--info:#3b82f6;--text:#e2e8f0;--muted:#94a3b8;--faint:#475569}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;font-size:14px}
+.topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:52px;background:var(--card);border-bottom:1px solid var(--border)}
+.topbar-brand{display:flex;align-items:center;gap:9px}
+.topbar-logo{width:26px;height:26px;border-radius:7px;background:linear-gradient(135deg,var(--accent),#4f46e5);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff}
+.topbar-title{font-size:14px;font-weight:700;color:var(--accent2)}
+.topbar-right{display:flex;align-items:center;gap:10px}
+.status-badge{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:100px;background:var(--border2);font-size:12px;color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--faint)}.dot.on{background:#22c55e;box-shadow:0 0 6px #22c55e88}.dot.off{background:#ef4444}
+.token-bar{display:none;align-items:center;gap:8px;padding:8px 24px;background:#1a1a24;border-bottom:1px solid var(--border)}.token-bar.show{display:flex}
+.token-bar label{font-size:12px;color:var(--muted)}.token-bar input{flex:1;max-width:300px;padding:5px 10px;background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:13px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;transition:filter .15s;white-space:nowrap}.btn:hover{filter:brightness(1.15)}.btn:active{opacity:.75}
+.btn-primary{background:var(--accent);color:#fff}.btn-danger{background:var(--danger);color:#fff}.btn-warn{background:var(--warn);color:#fff}.btn-success{background:var(--success);color:#fff}.btn-info{background:var(--info);color:#fff}
+.btn-ghost{background:var(--border2);color:var(--muted)}.btn-ghost:hover{color:var(--text)}.btn-sm{padding:4px 9px;font-size:11px;border-radius:6px}
+.stats{display:flex;flex-wrap:wrap;gap:10px;padding:16px 24px 0}
+.stat{flex:1;min-width:110px;background:var(--card);border:1px solid var(--border);border-radius:11px;padding:13px 16px}
+.stat-label{font-size:10px;font-weight:600;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+.stat-val{font-size:24px;font-weight:800;color:var(--accent2);line-height:1}.stat-sub{font-size:11px;color:var(--faint);margin-top:2px}
+.main{padding:16px 24px 40px}
+.section-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;gap:12px;flex-wrap:wrap}
+.section-hdr h2{font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.7px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:12px}
+.ucard{background:var(--card);border:1px solid var(--border);border-radius:13px;padding:15px 16px;transition:border-color .2s}.ucard:hover{border-color:#4c1d9566}
+.uid{font-size:15px;font-weight:700}.uid small{font-size:11px;color:var(--faint);font-weight:400;margin-left:4px}
+.hdot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-left:6px;vertical-align:middle}
+.hdot.g{background:#22c55e;box-shadow:0 0 4px #22c55e66}.hdot.y{background:#eab308;box-shadow:0 0 4px #eab30866}.hdot.r{background:#ef4444;box-shadow:0 0 4px #ef444466}
+.umeta{display:flex;gap:14px;margin-bottom:9px;flex-wrap:wrap}.umeta-item{font-size:12px;color:var(--faint)}.umeta-item b{color:var(--muted);font-weight:600}
+.refreshed{font-size:11px;color:var(--faint);margin-bottom:9px}
+.tags-wrap{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px;min-height:22px}
+.tag{padding:2px 8px;border-radius:100px;font-size:11px;font-weight:500;background:#1e1535;border:1px solid #3b1a6a;color:var(--accent2)}
+.tag-more{padding:2px 8px;border-radius:100px;font-size:11px;background:var(--border2);color:var(--faint);cursor:pointer}.tag-more:hover{color:var(--muted)}
+.uactions{display:flex;gap:6px;flex-wrap:wrap}
+.empty{text-align:center;padding:60px 20px;color:var(--faint)}
+.spinner{width:26px;height:26px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;margin:0 auto 12px;animation:spin .65s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center;padding:16px}.backdrop.open{display:flex}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:16px;width:100%;max-width:560px;max-height:85vh;display:flex;flex-direction:column}
+.modal-hdr{padding:15px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.modal-title{font-size:14px;font-weight:700}
+.mcls{background:none;border:none;color:var(--faint);cursor:pointer;font-size:18px;padding:2px}.mcls:hover{color:var(--text)}
+.mtabs{display:flex;border-bottom:1px solid var(--border);padding:0 18px;flex-shrink:0;overflow-x:auto}
+.mtab{padding:9px 14px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--faint);border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}.mtab.on{color:var(--accent2);border-bottom-color:var(--accent2)}
+.tp{padding:14px 18px;overflow-y:auto;flex:1;display:none}.tp.on{display:block}
+.sbox{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;padding:10px 12px;background:var(--bg);border:1px solid var(--border2);border-radius:10px}
+.si{font-size:12px;color:var(--faint)}.si b{color:var(--accent2);font-weight:700}.si.w b{color:var(--warn)}.si.g b{color:var(--success)}
+.dbar{display:flex;height:8px;border-radius:4px;overflow:hidden;margin:8px 0;gap:1px}.dseg{height:100%;min-width:2px}
+.toast{position:fixed;bottom:22px;right:22px;z-index:200;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 16px;font-size:13px;max-width:340px;transform:translateY(60px);opacity:0;transition:transform .22s;pointer-events:none}
+.toast.show{transform:translateY(0);opacity:1}.toast.ok{border-left:3px solid #22c55e}.toast.err{border-left:3px solid #ef4444}.toast.info{border-left:3px solid var(--accent)}
+.urow{display:flex;align-items:center;gap:6px;margin-bottom:8px}.utag{font-size:12px;color:var(--muted)}
+.vlink{font-size:11px;color:var(--accent2);text-decoration:none;padding:1px 6px;border:1px solid #3b1a6a;border-radius:100px;background:#1e1535}.vlink:hover{background:#2e2050}
+.trow{display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border2)}.trow:last-child{border-bottom:none}
+.tname{font-size:11px;color:var(--accent2);width:150px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tbarb{flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden}.tfill{height:100%;border-radius:2px;background:var(--accent)}
+.tval{font-size:11px;color:var(--faint);width:46px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
+.sort-sel{padding:4px 8px;background:var(--border2);border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:11px;cursor:pointer}
+.hbar{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border2)}
+.hbar-l{font-size:12px;color:var(--muted);width:160px;flex-shrink:0}.hbar-b{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.hbar-f{height:100%;border-radius:3px}.hbar-v{font-size:12px;font-weight:700;width:40px;text-align:right}
+</style>
+</head><body>
 <header class="topbar">
-  <div class="topbar-brand">
-    <div class="topbar-logo">R</div>
-    <span class="topbar-title">Rec Server Admin</span>
-  </div>
+  <div class="topbar-brand"><div class="topbar-logo">R</div><span class="topbar-title">Rec Admin <span style="font-size:10px;color:var(--faint);font-weight:400">v8</span></span></div>
   <div class="topbar-right">
-    <div class="status-badge" id="statusBadge">
-      <span class="dot" id="statusDot"></span>
-      <span id="statusText">Connecting…</span>
-    </div>
-    <span class="updated-txt" id="updatedTxt"></span>
-    <button class="btn btn-ghost btn-sm" onclick="loadAll()">↺ Refresh</button>
+    <div class="status-badge"><span class="dot" id="sDot"></span><span id="sTxt">Connecting</span></div>
+    <span style="font-size:11px;color:var(--faint)" id="updTxt"></span>
+    <button class="btn btn-ghost btn-sm" onclick="loadAll()">Refresh</button>
   </div>
 </header>
-
-<!-- Token auth bar (shown on 401) -->
-<div class="token-bar" id="tokenBar">
-  <label>Admin Token:</label>
-  <input id="tokenInput" type="password" placeholder="Enter ADMIN_TOKEN value…" />
-  <button class="btn btn-primary btn-sm" onclick="applyToken()">Apply</button>
-</div>
-
-<!-- Stats -->
+<div class="token-bar" id="tokenBar"><label>Admin Token:</label><input id="tokenIn" type="password" placeholder="Enter ADMIN_TOKEN"/><button class="btn btn-primary btn-sm" onclick="applyToken()">Apply</button></div>
 <div class="stats">
-  <div class="stat"><div class="stat-label">Version</div><div class="stat-val" id="sVer">—</div></div>
-  <div class="stat"><div class="stat-label">Users</div><div class="stat-val" id="sUsers">—</div></div>
-  <div class="stat"><div class="stat-label">Seen Posts</div><div class="stat-val" id="sSeen">—</div></div>
-  <div class="stat"><div class="stat-label">Signals</div><div class="stat-val" id="sSignals">—</div></div>
-  <div class="stat"><div class="stat-label">Bandit Arms</div><div class="stat-val" id="sArms">—</div></div>
-  <div class="stat"><div class="stat-label">IDF Docs</div><div class="stat-val" id="sIdf">—</div><div class="stat-sub">tag vocab</div></div>
-  <div class="stat"><div class="stat-label">DB Size</div><div class="stat-val" id="sDb">—</div><div class="stat-sub" id="sDbUnit"></div></div>
+  <div class="stat"><div class="stat-label">Version</div><div class="stat-val" id="xVer">-</div></div>
+  <div class="stat"><div class="stat-label">Users</div><div class="stat-val" id="xUsers">-</div></div>
+  <div class="stat"><div class="stat-label">Seen</div><div class="stat-val" id="xSeen">-</div></div>
+  <div class="stat"><div class="stat-label">Signals</div><div class="stat-val" id="xSig">-</div></div>
+  <div class="stat"><div class="stat-label">Arms</div><div class="stat-val" id="xArms">-</div></div>
+  <div class="stat"><div class="stat-label">IDF</div><div class="stat-val" id="xIdf">-</div><div class="stat-sub">tag vocab</div></div>
+  <div class="stat"><div class="stat-label">DB</div><div class="stat-val" id="xDb">-</div><div class="stat-sub" id="xDbU"></div></div>
 </div>
 <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:14px 24px 0">
-  <span style="font-size:11px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-right:4px">Global:</span>
-  <button class="btn btn-warn btn-sm" onclick="expireAll()">↺ Expire All Profiles</button>
-  <button class="btn btn-ghost btn-sm" onclick="clearAllSeen()">🗑 Clear All Seen</button>
+  <span style="font-size:11px;color:var(--faint);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-right:4px">Global:</span>
+  <button class="btn btn-warn btn-sm" onclick="gExpireAll()">Expire All</button>
+  <button class="btn btn-info btn-sm" onclick="gDecayArms()">Decay All Arms</button>
+  <button class="btn btn-success btn-sm" onclick="gPurgeStop()">Purge Stop Arms</button>
+  <button class="btn btn-ghost btn-sm" onclick="gClearSeen()">Clear All Seen</button>
 </div>
-
-<!-- User list -->
 <main class="main">
   <div class="section-hdr">
-    <h2 style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:0.7px">Users <span id="userCount" style="font-weight:400"></span></h2>
-    <input id="searchInput" type="text" placeholder="🔍 Search username or tag…" oninput="filterCards()" style="flex:1;max-width:260px;padding:5px 10px;background:var(--border2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:12px" />
+    <h2>Users <span id="uCnt" style="font-weight:400"></span></h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select class="sort-sel" id="sortSel" onchange="doSort()"><option value="id">ID</option><option value="active">Most Active</option><option value="stale">Stalest</option><option value="name">Name A-Z</option></select>
+      <input id="searchIn" type="text" placeholder="Search..." oninput="doSort()" style="min-width:160px;max-width:240px;padding:5px 10px;background:var(--border2);border:1px solid var(--border);border-radius:7px;color:var(--text);font-size:12px"/>
+    </div>
   </div>
-  <div class="grid" id="grid">
-    <div class="empty"><div class="spinner"></div>Loading…</div>
-  </div>
+  <div class="grid" id="grid"><div class="empty"><div class="spinner"></div>Loading</div></div>
 </main>
 <div style="padding:16px 24px 32px">
-  <h2 style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:0.7px;margin-bottom:10px">Activity Log</h2>
+  <h2 style="font-size:11px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.7px;margin-bottom:10px">Activity Log</h2>
   <div id="logList" style="display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;color:var(--faint);font-style:italic">No actions yet.</span></div>
 </div>
-<!-- Profile modal -->
-<div class="backdrop" id="profileModal" onclick="backdropClick(event)">
-  <div class="modal" style="max-width:520px;max-height:85vh">
-    <div class="modal-hdr">
-      <span class="modal-title" id="modalTitle">Profile</span>
-      <button class="modal-close" onclick="closeModal()">✕</button>
+<div class="backdrop" id="pModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-hdr"><span class="modal-title" id="mTitle">Profile</span><div style="display:flex;gap:6px;align-items:center"><button class="btn btn-sm btn-info" id="mRebuild">Rebuild</button><button class="mcls" onclick="closeModal()">&#x2715;</button></div></div>
+    <div class="mtabs">
+      <button class="mtab on" data-t="tags" onclick="swTab('tags')">Tags</button>
+      <button class="mtab" data-t="arms" onclick="swTab('arms')">Bandit Arms</button>
+      <button class="mtab" data-t="signals" onclick="swTab('signals')">Signals</button>
+      <button class="mtab" data-t="preview" onclick="swTab('preview')">Preview</button>
+      <button class="mtab" data-t="health" onclick="swTab('health')">Health</button>
     </div>
-    <div style="display:flex;border-bottom:1px solid var(--border);padding:0 18px;flex-shrink:0" id="modalTabs">
-      <button id="tbTags" onclick="switchTab('tags')" style="padding:9px 14px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--accent2);border-bottom:2px solid var(--accent2);margin-bottom:-1px">Tags</button>
-      <button id="tbArms" onclick="switchTab('arms')" style="padding:9px 14px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--faint);border-bottom:2px solid transparent;margin-bottom:-1px">Bandit Arms</button>
-      <button id="tbSignals" onclick="switchTab('signals')" style="padding:9px 14px;font-size:12px;font-weight:600;border:none;background:none;cursor:pointer;color:var(--faint);border-bottom:2px solid transparent;margin-bottom:-1px">Signals</button>
-    </div>
-    <div id="tabTags" style="padding:14px 18px;overflow-y:auto;flex:1"></div>
-    <div id="tabArms" style="display:none;padding:14px 18px;overflow-y:auto;flex:1"></div>
-    <div id="tabSignals" style="display:none;padding:14px 18px;overflow-y:auto;flex:1"></div>
+    <div id="tTags" class="tp on"></div>
+    <div id="tArms" class="tp"></div>
+    <div id="tSignals" class="tp"></div>
+    <div id="tPreview" class="tp"></div>
+    <div id="tHealth" class="tp"></div>
   </div>
 </div>
+<div class="toast" id="toast"></div><script>
+let adminToken='',lastUpdated=null,pollTimer=null,allUsers=[],curModal=null;
+const $=id=>document.getElementById(id);
+function hdrs(){const h={'Content-Type':'application/json'};if(adminToken)h['x-admin-token']=adminToken;return h;}
+async function api(method,url,body){
+  const opts={method,headers:hdrs()};
+  if(body!==undefined)opts.body=JSON.stringify(body);
+  const r=await fetch(url,opts);
+  if(r.status===401){$('tokenBar').classList.add('show');throw new Error('Unauthorized');}
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  return r.json();
+}
+function toast(msg,type){const el=$('toast');el.textContent=msg;el.className='toast '+(type||'ok')+' show';clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),3500);}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function ago(str){
+  if(!str)return'never';
+  const ms=Date.now()-new Date(str.replace(' ','T')+'Z').getTime();
+  if(isNaN(ms)||ms<0)return'just now';const m=Math.floor(ms/60000);
+  if(m<1)return'just now';if(m<60)return m+'m ago';const h=Math.floor(m/60);if(h<24)return h+'h ago';return Math.floor(h/24)+'d ago';
+}
+function fmtB(b){if(b<1024)return[b,'B'];if(b<1048576)return[(b/1024).toFixed(1),'KB'];return[(b/1048576).toFixed(2),'MB'];}
+function applyToken(){adminToken=$('tokenIn').value.trim();$('tokenBar').classList.remove('show');loadAll();}
+function uHealth(u){
+  const ms=Date.now()-new Date((u.lastRefreshed||'').replace(' ','T')+'Z').getTime();
+  if(isNaN(ms))return'r';if(ms<7200000&&u.armCount>0)return'g';if(ms<86400000)return'y';return'r';
+}
+const LOG=[];
+function logA(msg,type){
+  const now=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  LOG.unshift({msg,type:type||'ok',time:now});if(LOG.length>20)LOG.pop();
+  $('logList').innerHTML=LOG.map(e=>'<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--card);border:1px solid var(--border2);border-radius:7px;font-size:12px"><span style="color:var(--faint);font-size:11px;white-space:nowrap">'+e.time+'</span><span style="color:var(--muted);flex:1">'+esc(e.msg)+'</span><span style="padding:1px 6px;border-radius:100px;font-size:10px;font-weight:700;background:'+(e.type==='ok'?'#14532d':e.type==='warn'?'#451a03':'#450a0a')+';color:'+(e.type==='ok'?'#4ade80':e.type==='warn'?'#fb923c':'#f87171')+'">'+e.type.toUpperCase()+'</span></div>').join('');
+}
+setInterval(()=>{if(!lastUpdated)return;const s=Math.floor((Date.now()-lastUpdated)/1000);$('updTxt').textContent=s<5?'':'Updated '+s+'s ago';},1000);
 
-<!-- Toast -->
-<div class="toast" id="toast"></div>
-
-<script>
-  /* ─── State ─── */
-  let adminToken='', lastUpdated=null, pollTimer=null, allUsers=[], currentModal=null;
-  const $=id=>document.getElementById(id);
-
-  /* ─── Core API ─── */
-  function hdrs(){const h={'Content-Type':'application/json'};if(adminToken)h['x-admin-token']=adminToken;return h;}
-  async function api(method,url,body){
-    const opts={method,headers:hdrs()};
-    if(body!==undefined)opts.body=JSON.stringify(body);
-    const r=await fetch(url,opts);
-    if(r.status===401){$('tokenBar').classList.add('show');throw new Error('Unauthorized — enter your admin token above');}
-    if(!r.ok)throw new Error(`HTTP ${r.status}`);
-    return r.json();
+async function loadHealth(){
+  try{
+    const d=await api('GET','/api/health');
+    $('sDot').className='dot on';$('sTxt').textContent='Online';
+    $('xVer').textContent='v'+(d.version||'?');
+    $('xUsers').textContent=(d.profiledUsers||0).toLocaleString();
+    $('xSeen').textContent=(d.seenRecords||0).toLocaleString();
+    $('xSig').textContent=(d.signals||0).toLocaleString();
+    $('xArms').textContent=(d.banditArms||0).toLocaleString();
+    $('xIdf').textContent=(d.idfDocs||0).toLocaleString();
+    if(d.dbSize){const[v,u]=fmtB(d.dbSize);$('xDb').textContent=v;$('xDbU').textContent=u;}
+    lastUpdated=Date.now();
+  }catch{$('sDot').className='dot off';$('sTxt').textContent='Offline';}
+}
+async function loadUsers(){
+  try{allUsers=await api('GET','/admin/users');$('uCnt').textContent='('+allUsers.length+')';doSort();}
+  catch(e){$('grid').innerHTML='<div class="empty">Error: '+esc(e.message)+'</div>';}
+}
+function doSort(){
+  const s=$('sortSel').value;let list=[...allUsers];
+  if(s==='active')list.sort((a,b)=>b.seenCount-a.seenCount);
+  else if(s==='stale')list.sort((a,b)=>new Date(a.lastRefreshed||0)-new Date(b.lastRefreshed||0));
+  else if(s==='name')list.sort((a,b)=>(a.username||'zzz').localeCompare(b.username||'zzz'));
+  else list.sort((a,b)=>a.userId-b.userId);
+  const q=$('searchIn').value.toLowerCase().trim();
+  if(q)list=list.filter(u=>(u.username&&u.username.toLowerCase().includes(q))||String(u.userId).includes(q)||u.topTags.some(t=>t.tag.toLowerCase().includes(q)));
+  if(!list.length){$('grid').innerHTML='<div class="empty">No users found.</div>';return;}
+  $('grid').innerHTML=list.map(renderCard).join('');
+}
+function renderCard(u){
+  const pills=u.topTags.slice(0,5).map(t=>'<span class="tag" title="score:'+t.score+'">'+esc(t.tag)+'</span>').join('');
+  const more=u.totalTags>5?'<span class="tag-more" onclick="showProfile('+u.userId+')">+'+(u.totalTags-5)+' more</span>':'';
+  const h=uHealth(u);
+  const urow=u.username
+    ?'<div class="urow"><span class="utag">@'+esc(u.username)+'</span><a class="vlink" href="https://rule34vault.com/u/'+esc(u.username)+'" target="_blank">Visit</a></div>'
+    :'<div class="urow"><span style="font-size:11px;color:var(--faint)">No username</span></div>';
+  return'<div class="ucard" id="uc-'+u.userId+'"><div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px"><div class="uid">User <small>#'+u.userId+'</small><span class="hdot '+h+'" title="'+(h==='g'?'Healthy':h==='y'?'Stale':'Very stale')+'"></span></div></div>'+urow+'<div class="umeta"><div class="umeta-item"><b>'+u.seenCount.toLocaleString()+'</b> seen</div><div class="umeta-item"><b>'+u.totalTags.toLocaleString()+'</b> tags</div><div class="umeta-item"><b>'+u.armCount.toLocaleString()+'</b> arms</div></div><div class="refreshed">Refreshed: '+ago(u.lastRefreshed)+'</div><div class="tags-wrap">'+pills+more+'</div><div class="uactions"><button class="btn btn-ghost btn-sm" onclick="showProfile('+u.userId+')">Profile</button><button class="btn btn-info btn-sm" onclick="uRebuild('+u.userId+')">Rebuild</button><button class="btn btn-ghost btn-sm" onclick="uDecay('+u.userId+')">Decay</button><button class="btn btn-ghost btn-sm" onclick="uResetArms('+u.userId+')">Reset Arms</button><button class="btn btn-warn btn-sm" onclick="uClearSeen('+u.userId+')">Clear Seen</button><button class="btn btn-danger btn-sm" onclick="uRemove('+u.userId+')">Remove</button></div></div>';
+}
+/* Modal */
+const loaded={};
+function swTab(name){
+  document.querySelectorAll('.mtab').forEach(b=>b.classList.toggle('on',b.dataset.t===name));
+  document.querySelectorAll('.tp').forEach(p=>p.classList.toggle('on',p.id==='t'+name.charAt(0).toUpperCase()+name.slice(1)));
+  if(curModal&&name!=='tags')loadTab(name,curModal);
+}
+async function loadTab(tab,uid){
+  const key=tab+'-'+uid;if(loaded[key])return;loaded[key]=true;
+  const pid='t'+tab.charAt(0).toUpperCase()+tab.slice(1);
+  $(pid).innerHTML='<div class="spinner" style="margin:20px auto"></div>';
+  try{
+    if(tab==='arms'){await renderArms(pid,uid);}
+    else if(tab==='signals'){await renderSignals(pid,uid);}
+    else if(tab==='preview'){await renderPreview(pid,uid);}
+    else if(tab==='health'){await renderHealth(pid,uid);}
+  }catch(e){$(pid).innerHTML='<p style="color:#ef4444">'+esc(e.message)+'</p>';}
+}
+async function renderArms(pid,uid){
+  const arms=await api('GET','/admin/user/'+uid+'/arms');
+  if(!arms.length){$(pid).innerHTML='<p style="color:var(--faint)">No bandit arms yet.</p>';return;}
+  const maxR=arms[0].estRate||1;
+  const avgA=(arms.reduce((s,a)=>s+a.alpha,0)/arms.length).toFixed(1);
+  const avgB=(arms.reduce((s,a)=>s+a.beta,0)/arms.length).toFixed(1);
+  const bChanged=arms.filter(a=>Math.abs(a.beta-10)>0.01).length;
+  const bVar=(arms.reduce((s,a)=>s+Math.pow(a.beta-10,2),0)/arms.length).toFixed(2);
+  const top=arms.filter(a=>a.estRate>=0.6).length;
+  const mid=arms.filter(a=>a.estRate>=0.3&&a.estRate<0.6).length;
+  const low=arms.filter(a=>a.estRate<0.3).length;
+  let h='<div class="sbox"><div class="si"><b>'+arms.length+'</b> arms</div><div class="si">avg alpha <b>'+avgA+'</b></div><div class="si">avg beta <b>'+avgB+'</b></div><div class="si '+(bChanged>0?'g':'w')+'">beta changed: <b>'+bChanged+'</b></div><div class="si '+(parseFloat(bVar)>0?'g':'w')+'">beta variance: <b>'+bVar+'</b></div></div>';
+  h+='<p style="font-size:10px;color:var(--faint);margin-bottom:4px">Top (>=60%): '+top+' | Mid (30-60%): '+mid+' | Low (<30%): '+low+'</p>';
+  h+=arms.map(a=>{
+    const bc=Math.abs(a.beta-10)>0.01;
+    return'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border2)'+(bc?';background:#451a0322;border-left:2px solid var(--warn);padding-left:6px':'')+'"><span style="font-size:11px;color:var(--muted);width:140px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(a.tag)+'">'+esc(a.tag)+'</span><div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;border-radius:2px;background:'+(bc?'var(--warn)':'#3b82f6')+';width:'+Math.round(a.estRate/maxR*100)+'%"></div></div><span style="font-size:10px;color:var(--faint);width:70px;flex-shrink:0">a'+a.alpha.toFixed(1)+' b'+a.beta.toFixed(1)+'</span><span style="font-size:11px;color:'+(bc?'var(--warn)':'#60a5fa')+';width:38px;text-align:right">'+(a.estRate*100).toFixed(1)+'%</span></div>';
+  }).join('');
+  $(pid).innerHTML=h;
+}
+async function renderSignals(pid,uid){
+  const[sigs,stats]=await Promise.all([api('GET','/admin/user/'+uid+'/signals'),api('GET','/admin/user/'+uid+'/signal-stats')]);
+  const sc={like:'#14532d|#4ade80',bookmark:'#1e3a5f|#60a5fa',super_like:'#3b0764|#c084fc',skip:'#450a0a|#f87171',complete:'#1c2a1c|#86efac',view_duration:'#1a1a2e|#818cf8',attention:'#1a1a2e|#c084fc'};
+  const sl={like:'like',bookmark:'bkmk',super_like:'super',skip:'skip',complete:'done',view_duration:'view',attention:'attn'};
+  const bc={like:'#4ade80',bookmark:'#60a5fa',super_like:'#c084fc',skip:'#f87171',view_duration:'#818cf8',attention:'#a78bfa',complete:'#86efac'};
+  let h='<div class="sbox"><div class="si"><b>'+stats.total+'</b> total</div><div class="si"><b>'+stats.positive+'</b> positive</div><div class="si"><b>'+stats.recentCount+'</b> last 7d</div><div class="si">engage <b>'+(stats.engagementRate*100).toFixed(1)+'%</b></div><div class="si">last <b>'+ago(stats.lastSignal)+'</b></div></div>';
+  if(stats.breakdown.length>0){
+    const mx=stats.breakdown[0].c;
+    h+='<div class="dbar">';
+    stats.breakdown.forEach(b=>{h+='<div class="dseg" style="width:'+Math.max(2,Math.round(b.c/stats.total*100))+'%;background:'+(bc[b.signal]||'#666')+'" title="'+b.signal+': '+b.c+'"></div>';});
+    h+='</div>';
+    h+=stats.breakdown.map(b=>{const[bg,fg]=(sc[b.signal]||'#333|#aaa').split('|');return'<div style="display:flex;align-items:center;gap:8px;padding:3px 0"><span style="padding:2px 7px;border-radius:100px;font-size:10px;font-weight:700;background:'+bg+';color:'+fg+'">'+(sl[b.signal]||b.signal)+'</span><div style="flex:1;height:3px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;background:'+fg+';width:'+Math.round(b.c/mx*100)+'%"></div></div><span style="font-size:11px;color:var(--faint);width:32px;text-align:right">'+b.c+'</span></div>';}).join('');
+    h+='<div style="height:12px"></div>';
   }
-
-  /* ─── Utilities ─── */
-  function toast(msg,type='ok'){const el=$('toast');el.textContent=msg;el.className=`toast ${type} show`;clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),3500);}
-  function esc(s){return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-  function ago(str){
-    if(!str)return'never';
-    const ms=Date.now()-new Date(str.replace(' ','T')+'Z').getTime();
-    if(isNaN(ms)||ms<0)return'just now';
-    const m=Math.floor(ms/60000);
-    if(m<1)return'just now';if(m<60)return`${m}m ago`;
-    const h=Math.floor(m/60);if(h<24)return`${h}h ago`;return`${Math.floor(h/24)}d ago`;
+  h+='<p style="font-size:10px;color:var(--faint);margin-bottom:6px">Recent signals (last 30)</p>';
+  if(!sigs.length)h+='<p style="color:var(--faint)">No signals yet.</p>';
+  else h+=sigs.map(s=>{const[bg,fg]=(sc[s.signal]||'#333|#aaa').split('|');return'<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border2)"><span style="padding:2px 7px;border-radius:100px;font-size:10px;font-weight:700;background:'+bg+';color:'+fg+'">'+(sl[s.signal]||s.signal)+'</span><span style="font-size:11px;color:var(--muted);flex:1">Post <a href="https://rule34vault.com/post/'+s.post_id+'" target="_blank" style="color:var(--accent2);text-decoration:none">#'+s.post_id+'</a></span><span style="font-size:10px;color:var(--faint)">'+ago(s.created_at)+'</span></div>';}).join('');
+  $(pid).innerHTML=h;
+}
+async function renderPreview(pid,uid){
+  const d=await api('POST','/admin/user/'+uid+'/preview-recs');
+  let h='<div class="sbox"><div class="si"><b>'+d.seenCount+'</b> suppressed</div><div class="si"><b>'+d.totalSeen+'</b> total seen</div></div>';
+  h+='<p style="font-size:11px;color:var(--faint);margin-bottom:8px">Top profile tags (what the algorithm searches for):</p>';
+  if(d.topTags.length){
+    const mx=d.topTags[0].score;
+    h+=d.topTags.map(t=>'<div class="trow"><span class="tname">'+esc(t.tag)+'</span><div class="tbarb"><div class="tfill" style="width:'+Math.round(t.score/mx*100)+'%"></div></div><span class="tval">'+t.score+'</span></div>').join('');
   }
-  function fmtBytes(b){if(b<1024)return[b,'B'];if(b<1048576)return[(b/1024).toFixed(1),'KB'];return[(b/1048576).toFixed(2),'MB'];}
-  function applyToken(){adminToken=$('tokenInput').value.trim();$('tokenBar').classList.remove('show');loadAll();}
-
-  /* ─── Activity log ─── */
-  const LOG=[];
-  function logAction(msg,type='ok'){
-    const now=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    LOG.unshift({msg,type,time:now});if(LOG.length>20)LOG.pop();
-    $('logList').innerHTML=LOG.map(e=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 10px;background:var(--card);border:1px solid var(--border2);border-radius:7px;font-size:12px"><span style="color:var(--faint);font-size:11px;white-space:nowrap">${e.time}</span><span style="color:var(--muted);flex:1">${esc(e.msg)}</span><span style="padding:1px 6px;border-radius:100px;font-size:10px;font-weight:700;background:${e.type==='ok'?'#14532d':e.type==='warn'?'#451a03':'#450a0a'};color:${e.type==='ok'?'#4ade80':e.type==='warn'?'#fb923c':'#f87171'}">${e.type.toUpperCase()}</span></div>`).join('');
+  h+='<p style="font-size:11px;color:var(--faint);margin:14px 0 8px">Thompson Sampling - sampled arms for next batch:</p>';
+  if(d.sampledArms.length){
+    h+=d.sampledArms.map((a,i)=>'<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border2)"><span style="font-size:10px;color:var(--faint);width:20px">#'+(i+1)+'</span><span style="font-size:11px;color:var(--accent2);flex:1">'+esc(a.tag)+'</span><span style="font-size:10px;color:var(--faint)">a'+a.alpha+' b'+a.beta+'</span><span style="font-size:11px;color:#60a5fa;width:42px;text-align:right">'+(a.sampled*100).toFixed(1)+'%</span></div>').join('');
   }
+  h+='<p style="font-size:10px;color:var(--faint);margin-top:12px;font-style:italic">'+esc(d.message)+'</p>';
+  $(pid).innerHTML=h;
+}
+async function renderHealth(pid,uid){
+  const[prof,arms,stats]=await Promise.all([api('GET','/admin/user/'+uid),api('GET','/admin/user/'+uid+'/arms'),api('GET','/admin/user/'+uid+'/signal-stats')]);
+  let score=0,mx=0;const checks=[];
+  mx+=20;const as=Math.min(20,Math.round(arms.length/50*20));score+=as;
+  checks.push({l:'Arm diversity ('+arms.length+' arms)',s:as,m:20});
+  mx+=25;const bc=arms.filter(a=>Math.abs(a.beta-10)>0.01).length;
+  const bs=Math.min(25,arms.length>0?Math.round(bc/arms.length*100):0);score+=bs;
+  checks.push({l:'Beta variance ('+bc+' changed)',s:bs,m:25});
+  mx+=20;const rs=Math.min(20,Math.round(stats.recentCount/10*20));score+=rs;
+  checks.push({l:'Signal recency ('+stats.recentCount+' in 7d)',s:rs,m:20});
+  mx+=15;const types=stats.breakdown.length;const ts=Math.min(15,types*3);score+=ts;
+  checks.push({l:'Signal diversity ('+types+' types)',s:ts,m:15});
+  mx+=20;const es=Math.min(20,Math.round(stats.engagementRate*100));score+=es;
+  checks.push({l:'Engagement rate ('+(stats.engagementRate*100).toFixed(1)+'%)',s:es,m:20});
+  const pct=mx>0?Math.round(score/mx*100):0;
+  const col=pct>=70?'var(--success)':pct>=40?'var(--warn)':'var(--danger)';
+  let h='<div style="text-align:center;margin-bottom:16px"><div style="font-size:48px;font-weight:800;color:'+col+'">'+pct+'</div><div style="font-size:12px;color:var(--faint)">Profile Health Score</div></div>';
+  h+=checks.map(c=>{const p=c.m>0?Math.round(c.s/c.m*100):0;const cl=p>=70?'var(--success)':p>=40?'var(--warn)':'var(--danger)';return'<div class="hbar"><span class="hbar-l">'+esc(c.l)+'</span><div class="hbar-b"><div class="hbar-f" style="width:'+p+'%;background:'+cl+'"></div></div><span class="hbar-v" style="color:'+cl+'">'+c.s+'/'+c.m+'</span></div>';}).join('');
+  h+='<div style="margin-top:16px;padding-top:12px;border-top:1px solid var(--border2)"><p style="font-size:11px;color:var(--faint);margin-bottom:6px">Quick summary</p>';
+  h+='<div class="sbox"><div class="si"><b>'+prof.totalTags+'</b> tags</div><div class="si"><b>'+prof.seenCount.toLocaleString()+'</b> seen</div><div class="si"><b>'+prof.armCount+'</b> arms</div><div class="si">refreshed <b>'+ago(prof.lastRefreshed)+'</b></div></div></div>';
+  $(pid).innerHTML=h;
+}
+async function showProfile(uid){
+  curModal=uid;Object.keys(loaded).filter(k=>k.endsWith('-'+uid)).forEach(k=>delete loaded[k]);
+  $('mTitle').textContent='User #'+uid;
+  ['tTags','tArms','tSignals','tPreview','tHealth'].forEach(id=>{$(id).innerHTML='';});
+  swTab('tags');$('tTags').innerHTML='<div class="spinner" style="margin:20px auto"></div>';
+  $('mRebuild').onclick=()=>uRebuild(uid);
+  $('pModal').classList.add('open');
+  try{
+    const d=await api('GET','/admin/user/'+uid);
+    $('mTitle').textContent=d.username?'User #'+uid+' @'+d.username:'User #'+uid;
+    const mx=d.topTags[0]?d.topTags[0].score:1;
+    $('tTags').innerHTML='<div class="sbox"><div class="si"><b>'+d.totalTags+'</b> total tags</div><div class="si"><b>'+d.seenCount.toLocaleString()+'</b> seen</div><div class="si"><b>'+d.armCount+'</b> arms</div><div class="si">refreshed <b>'+ago(d.lastRefreshed)+'</b></div></div><p style="font-size:11px;color:var(--faint);margin-bottom:8px">Top '+d.topTags.length+' of '+d.totalTags+' tags</p>'+(d.topTags.map(t=>'<div class="trow"><span class="tname" title="'+esc(t.tag)+'">'+esc(t.tag)+'</span><div class="tbarb"><div class="tfill" style="width:'+Math.round(t.score/mx*100)+'%"></div></div><span class="tval">'+t.score+'</span></div>').join('')||'<p style="color:var(--faint)">No tag data.</p>');
+  }catch(e){$('tTags').innerHTML='<p style="color:#ef4444">'+esc(e.message)+'</p>';}
+}
+function closeModal(){$('pModal').classList.remove('open');curModal=null;}
 
-  /* ─── Live "updated Xs ago" ─── */
-  setInterval(()=>{
-    if(!lastUpdated)return;
-    const s=Math.floor((Date.now()-lastUpdated)/1000);
-    $('updatedTxt').textContent=s<5?'':`Updated ${s}s ago`;
-  },1000);
+/* Per-user actions */
+async function uRebuild(uid){
+  if(!confirm('Force full rebuild for user #'+uid+'?\nPurges arms + co-occurrence. Full rebuild on next request.'))return;
+  try{await api('POST','/admin/user/'+uid+'/rebuild-now');toast('#'+uid+' rebuild scheduled','info');logA('User #'+uid+' rebuild','warn');await loadUsers();}catch(e){toast(e.message,'err');}
+}
+async function uDecay(uid){
+  try{const d=await api('POST','/admin/user/'+uid+'/decay-arms');toast('Decayed '+d.decayed+' arms for #'+uid,'ok');logA('User #'+uid+' arms decayed ('+d.decayed+')','ok');}catch(e){toast(e.message,'err');}
+}
+async function uResetArms(uid){
+  if(!confirm('Reset all bandit arms for user #'+uid+'?\nKeeps profile + seen. Arms rebuild from profile.'))return;
+  try{await api('POST','/admin/user/'+uid+'/reset-arms');toast('Arms reset for #'+uid,'ok');logA('User #'+uid+' arms reset','warn');await loadUsers();}catch(e){toast(e.message,'err');}
+}
+async function uClearSeen(uid){
+  if(!confirm('Clear seen history for user #'+uid+'?'))return;
+  try{await api('POST','/admin/user/'+uid+'/clear-seen');toast('Seen cleared for #'+uid,'ok');logA('User #'+uid+' seen cleared','ok');await loadUsers();}catch(e){toast(e.message,'err');}
+}
+async function uRemove(uid){
+  if(!confirm('Remove ALL data for user #'+uid+'?'))return;
+  if(!confirm('Are you sure? Cannot be undone.'))return;
+  try{await api('DELETE','/admin/user/'+uid);toast('#'+uid+' removed','ok');logA('User #'+uid+' removed','warn');
+  var el=document.getElementById('uc-'+uid);if(el)el.remove();
+  allUsers=allUsers.filter(u=>u.userId!==uid);$('uCnt').textContent='('+allUsers.length+')';await loadHealth();}catch(e){toast(e.message,'err');}
+}
 
-  /* ─── Health ─── */
-  async function loadHealth(){
-    try{
-      const d=await api('GET','/api/health');
-      $('statusDot').className='dot online';$('statusText').textContent='Online';
-      $('sVer').textContent=`v${d.version??'?'}`;
-      $('sUsers').textContent=(d.profiledUsers??0).toLocaleString();
-      $('sSeen').textContent=(d.seenRecords??0).toLocaleString();
-      $('sSignals').textContent=(d.signals??0).toLocaleString();
-      $('sArms').textContent=(d.banditArms??0).toLocaleString();
-      $('sIdf').textContent=(d.idfDocs??0).toLocaleString();
-      if(d.dbSize){const[v,u]=fmtBytes(d.dbSize);$('sDb').textContent=v;$('sDbUnit').textContent=u;}
-      lastUpdated=Date.now();
-    }catch{$('statusDot').className='dot offline';$('statusText').textContent='Offline';}
-  }
+/* Global actions */
+async function gExpireAll(){
+  if(!confirm('Expire ALL user profiles?'))return;
+  try{const d=await api('POST','/admin/users/expire-all');toast('All '+d.count+' profiles expired','info');logA('All profiles expired','warn');await loadAll();}catch(e){toast(e.message,'err');}
+}
+async function gDecayArms(){
+  if(!confirm('Decay all bandit arms toward prior? (weekly maintenance)'))return;
+  try{const d=await api('POST','/admin/users/decay-arms');toast('Decayed '+d.armsDecayed+' arms','ok');logA('Global arm decay: '+d.armsDecayed+' arms','ok');await loadHealth();}catch(e){toast(e.message,'err');}
+}
+async function gPurgeStop(){
+  if(!confirm('Purge all stop-tag arms globally?\nRemoves arms for generic tags (female, ass, penis, etc.)'))return;
+  try{const d=await api('POST','/admin/users/purge-stop-arms');toast('Purged '+d.purged+' of '+d.total+' arms','ok');logA('Stop-tag purge: '+d.purged+'/'+d.total,'ok');await loadAll();}catch(e){toast(e.message,'err');}
+}
+async function gClearSeen(){
+  if(!confirm('Clear ALL seen records globally?'))return;
+  if(!confirm('Confirm: clear all seen for every user?'))return;
+  try{const d=await api('POST','/admin/users/clear-all-seen');toast('Cleared '+d.count.toLocaleString()+' seen records','ok');logA('Global seen cleared ('+d.count+')','warn');await loadAll();}catch(e){toast(e.message,'err');}
+}
 
-  /* ─── User list ─── */
-  async function loadUsers(){
-    try{
-      allUsers=await api('GET','/admin/users');
-      $('userCount').textContent=`(${allUsers.length})`;
-      renderGrid(allUsers);
-    }catch(e){$('grid').innerHTML=`<div class="empty">Error: ${esc(e.message)}</div>`;}
-  }
-
-  function renderGrid(users){
-    if(!users.length){$('grid').innerHTML=`<div class="empty">No users found${$('searchInput').value?' matching your search':''}.</div>`;return;}
-    $('grid').innerHTML=users.map(renderCard).join('');
-  }
-
-  function filterCards(){
-    const q=$('searchInput').value.toLowerCase().trim();
-    if(!q){renderGrid(allUsers);return;}
-    renderGrid(allUsers.filter(u=>
-      (u.username&&u.username.toLowerCase().includes(q))||
-      String(u.userId).includes(q)||
-      u.topTags.some(t=>t.tag.toLowerCase().includes(q))
-    ));
-  }
-
-  function renderCard(u){
-    const pills=u.topTags.slice(0,5).map(t=>`<span class="tag" title="score:${t.score}">${esc(t.tag)}</span>`).join('');
-    const more=u.totalTags>5?`<span class="tag-more" onclick="showProfile(${u.userId})">+${u.totalTags-5} more</span>`:'';
-    const urow=u.username
-      ?`<div class="username-row"><span class="username-tag">@${esc(u.username)}</span><a class="visit-link" href="https://rule34vault.com/u/${esc(u.username)}" target="_blank" rel="noopener">🌐 Visit</a></div>`
-      :`<div class="username-row"><span style="font-size:11px;color:var(--faint)">Username stored on first request</span></div>`;
-    return`<div class="ucard" id="uc-${u.userId}">
-      <div class="ucard-hdr"><div class="uid">User <small>#${u.userId}</small></div></div>
-      ${urow}
-      <div class="umeta">
-        <div class="umeta-item"><b>${u.seenCount.toLocaleString()}</b> seen</div>
-        <div class="umeta-item"><b>${u.totalTags.toLocaleString()}</b> tags</div>
-        <div class="umeta-item"><b>${u.armCount.toLocaleString()}</b> arms</div>
-      </div>
-      <div class="refreshed">Refreshed: ${ago(u.lastRefreshed)}</div>
-      <div class="tags-wrap">${pills}${more}</div>
-      <div class="uactions">
-        <button class="btn btn-ghost btn-sm" onclick="showProfile(${u.userId})">👁 Profile</button>
-        <button class="btn btn-warn btn-sm"  onclick="expireUser(${u.userId})">↺ Rebuild</button>
-        <button class="btn btn-ghost btn-sm" onclick="clearSeen(${u.userId})">🗑 Seen</button>
-        <button class="btn btn-danger btn-sm" onclick="removeUser(${u.userId})">✕</button>
-      </div>
-    </div>`;
-  }
-
-  /* ─── Modal tabs ─── */
-  function switchTab(name){
-    ['tags','arms','signals'].forEach((t,i)=>{
-      const btn=$(`tb${t.charAt(0).toUpperCase()+t.slice(1)}`);
-      const active=t===name;
-      btn.style.color=active?'var(--accent2)':'var(--faint)';
-      btn.style.borderBottomColor=active?'var(--accent2)':'transparent';
-      $(`tab${t.charAt(0).toUpperCase()+t.slice(1)}`).style.display=active?'block':'none';
-    });
-    if(currentModal&&name!=='tags')loadModalTab(name,currentModal);
-  }
-
-  const loadedTabs={};
-  async function loadModalTab(tab,userId){
-    const key=`${tab}-${userId}`;if(loadedTabs[key])return;loadedTabs[key]=true;
-    const pid=`tab${tab.charAt(0).toUpperCase()+tab.slice(1)}`;
-    $(pid).innerHTML='<div class="spinner" style="margin:20px auto"></div>';
-    try{
-      if(tab==='arms'){
-        const arms=await api('GET',`/admin/user/${userId}/arms`);
-        if(!arms.length){$(pid).innerHTML='<p style="color:var(--faint);font-size:13px;padding:10px 0">No bandit arms yet.</p>';return;}
-        const maxR=arms[0].estRate||1;
-        $(pid).innerHTML='<p style="font-size:11px;color:var(--faint);margin-bottom:10px">Estimated engagement rate per tag (α/(α+β))</p>'+
-          arms.map(a=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid var(--border2)"><span style="font-size:11px;color:var(--muted);width:140px;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(a.tag)}">${esc(a.tag)}</span><div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;border-radius:2px;background:#3b82f6;width:${Math.round(a.estRate/maxR*100)}%"></div></div><span style="font-size:10px;color:var(--faint);width:70px;flex-shrink:0">α${a.alpha.toFixed(1)} β${a.beta.toFixed(1)}</span><span style="font-size:11px;color:#60a5fa;width:38px;text-align:right">${(a.estRate*100).toFixed(1)}%</span></div>`).join('');
-      }else if(tab==='signals'){
-        const sigs=await api('GET',`/admin/user/${userId}/signals`);
-        if(!sigs.length){$(pid).innerHTML='<p style="color:var(--faint);font-size:13px;padding:10px 0">No signals recorded yet.</p>';return;}
-        const lbl={like:'like',bookmark:'bkmk',super_like:'super',skip:'skip',complete:'done',view_duration:'view'};
-        const col={like:'#14532d|#4ade80',bookmark:'#1e3a5f|#60a5fa',super_like:'#3b0764|#c084fc',skip:'#450a0a|#f87171',complete:'#1c2a1c|#86efac',view_duration:'#1a1a2e|#818cf8'};
-        $(pid).innerHTML=sigs.map(s=>{const[bg,fg]=(col[s.signal]||'#333|#aaa').split('|');return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border2)"><span style="padding:2px 7px;border-radius:100px;font-size:10px;font-weight:700;white-space:nowrap;background:${bg};color:${fg}">${lbl[s.signal]??s.signal}</span><span style="font-size:11px;color:var(--muted);flex:1">Post <a href="https://rule34vault.com/post/${s.post_id}" target="_blank" rel="noopener" style="color:var(--accent2);text-decoration:none">#${s.post_id}</a></span><span style="font-size:10px;color:var(--faint);white-space:nowrap">${ago(s.created_at)}</span></div>`;}).join('');
-      }
-    }catch(e){$(pid).innerHTML=`<p style="color:#ef4444">${esc(e.message)}</p>`;}
-  }
-
-  async function showProfile(userId){
-    currentModal=userId;
-    Object.keys(loadedTabs).filter(k=>k.endsWith(`-${userId}`)).forEach(k=>delete loadedTabs[k]);
-    $('modalTitle').textContent=`User #${userId}`;
-    $('tabTags').innerHTML=$('tabArms').innerHTML=$('tabSignals').innerHTML='';
-    switchTab('tags');
-    $('tabTags').innerHTML='<div class="spinner" style="margin:20px auto"></div>';
-    $('profileModal').classList.add('open');
-    try{
-      const d=await api('GET',`/admin/user/${userId}`);
-      $('modalTitle').textContent=d.username?`User #${userId} · @${esc(d.username)}`:`User #${userId}`;
-      const maxS=d.topTags[0]?.score||1;
-      $('tabTags').innerHTML=`<div class="profile-meta">
-        <div class="profile-meta-item"><b>${d.totalTags}</b> total tags</div>
-        <div class="profile-meta-item"><b>${d.seenCount.toLocaleString()}</b> seen</div>
-        <div class="profile-meta-item"><b>${d.armCount}</b> arms</div>
-        <div class="profile-meta-item">refreshed <b>${ago(d.lastRefreshed)}</b></div>
-      </div>
-      <p style="font-size:11px;color:var(--faint);margin-bottom:8px">Top ${d.topTags.length} of ${d.totalTags} tags</p>`+
-      (d.topTags.map(t=>`<div class="tag-row"><span class="tag-name" title="${esc(t.tag)}">${esc(t.tag)}</span><div class="tag-bar-bg"><div class="tag-bar-fill" style="width:${Math.round(t.score/maxS*100)}%;background:var(--accent)"></div></div><span class="tag-score-val">${t.score}</span></div>`).join('')||'<p style="color:var(--faint);font-size:13px">No tag data yet.</p>');
-    }catch(e){$('tabTags').innerHTML=`<p style="color:#ef4444;padding:10px 0">${esc(e.message)}</p>`;}
-  }
-
-  function closeModal(){$('profileModal').classList.remove('open');currentModal=null;}
-  function backdropClick(e){if(e.target===$('profileModal'))closeModal();}
-
-  /* ─── Per-user actions ─── */
-  async function expireUser(userId){
-    if(!confirm(`Force full profile rebuild for user #${userId}?\n\nCached profile is discarded. A full history rebuild runs next time they open the For You tab.`))return;
-    try{
-      await api('POST',`/admin/user/${userId}/expire`);
-      toast(`#${userId} — profile expired, rebuilds on next request`,'info');
-      logAction(`User #${userId} force-expired`,'warn');
-      await loadUsers();
-    }catch(e){toast(e.message,'err');logAction(e.message,'err');}
-  }
-
-  async function clearSeen(userId){
-    if(!confirm(`Clear seen post history for user #${userId}?\n\nThey may see posts they've already viewed.`))return;
-    try{
-      await api('POST',`/admin/user/${userId}/clear-seen`);
-      toast(`Seen history cleared for #${userId}`,'ok');
-      logAction(`User #${userId} seen posts cleared`,'ok');
-      await loadUsers();
-    }catch(e){toast(e.message,'err');logAction(e.message,'err');}
-  }
-
-  async function removeUser(userId){
-    if(!confirm(`Remove ALL data for user #${userId}?\n\nPermanently deletes profile, seen posts, bandit arms, signals and cursors.`))return;
-    if(!confirm(`Are you sure? This cannot be undone.`))return;
-    try{
-      await api('DELETE',`/admin/user/${userId}`);
-      toast(`User #${userId} fully removed`,'ok');
-      logAction(`User #${userId} removed`,'warn');
-      $(`uc-${userId}`)?.remove();
-      allUsers=allUsers.filter(u=>u.userId!==userId);
-      $('userCount').textContent=`(${allUsers.length})`;
-      await loadHealth();
-    }catch(e){toast(e.message,'err');logAction(e.message,'err');}
-  }
-
-  /* ─── Global actions ─── */
-  async function expireAll(){
-    if(!confirm(`Expire ALL user profiles?\n\nEvery user gets a full history rebuild next time they open For You.`))return;
-    try{
-      const d=await api('POST','/admin/users/expire-all');
-      toast(`All ${d.count} profiles expired`,'info');
-      logAction(`All ${d.count} profiles force-expired`,'warn');
-      await loadAll();
-    }catch(e){toast(e.message,'err');logAction(e.message,'err');}
-  }
-
-  async function clearAllSeen(){
-    if(!confirm(`Clear ALL seen records globally?\n\nRemoves ${$('sSeen').textContent||'?'} entries across all users.`))return;
-    if(!confirm(`Confirm: clear all seen history for every user? Cannot be undone.`))return;
-    try{
-      const d=await api('POST','/admin/users/clear-all-seen');
-      toast(`Cleared ${d.count.toLocaleString()} seen records globally`,'ok');
-      logAction(`Global seen posts cleared (${d.count})`,'warn');
-      await loadAll();
-    }catch(e){toast(e.message,'err');logAction(e.message,'err');}
-  }
-
-  /* ─── Auto-poll & Init ─── */
-  function startPoll(){clearInterval(pollTimer);pollTimer=setInterval(()=>{loadHealth();loadUsers();},10000);}
-  async function loadAll(){await loadHealth();await loadUsers();}
-
-  $('tokenInput').addEventListener('keydown',e=>{if(e.key==='Enter')applyToken();});
-  loadAll().then(startPoll);
+/* Init */
+function startPoll(){clearInterval(pollTimer);pollTimer=setInterval(()=>{loadHealth();loadUsers();},10000);}
+async function loadAll(){await loadHealth();await loadUsers();}
+$('tokenIn').addEventListener('keydown',e=>{if(e.key==='Enter')applyToken();});
+loadAll().then(startPoll);
 </script>
 </body>
 </html>

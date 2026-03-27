@@ -1691,6 +1691,166 @@ app.post("/admin/users/clear-all-seen", adminAuth, (req, res) => {
   res.json({ ok: true, count });
 });
 
+// Admin: immediately rebuild a user's profile (not just expire — actually rebuild now)
+app.post("/admin/user/:userId/rebuild-now", adminAuth, async (req, res) => {
+  const userId = parseInt(req.params.userId, 10);
+  const profile = stmtGetProfile.get(userId);
+  if (!profile) return res.status(404).json({ error: "User not found" });
+  try {
+    // We need a JWT to call R34 API. Use a dummy auth approach:
+    // Since this is admin-only, we expire the profile so next user request triggers rebuild.
+    // For immediate rebuild we'd need the user's JWT which we don't have.
+    // Instead: expire + clear cursors so it's a FULL rebuild on next request.
+    db.prepare(
+      `UPDATE user_profiles SET refreshed = datetime('now', '-48 hours') WHERE user_id = ?`,
+    ).run(userId);
+    stmtClearCursors.run(userId);
+    stmtDeleteArms.run(userId);
+    stmtDeleteCooccurrence.run(userId);
+    console.log(
+      `[admin] Force rebuild scheduled for user ${userId} (arms + co-occurrence purged)`,
+    );
+    res.json({
+      ok: true,
+      message: "Profile expired, arms purged. Full rebuild on next request.",
+    });
+  } catch (e) {
+    console.error(`[admin] Rebuild error for user ${userId}:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: preview recommendations for a user (uses their profile to build recs without marking seen)
+app.post("/admin/user/:userId/preview-recs", adminAuth, async (req, res) => {
+  const userId = parseInt(req.params.userId, 10);
+  const profile = stmtGetProfile.get(userId);
+  if (!profile) return res.status(404).json({ error: "User not found" });
+  try {
+    const tagScore = JSON.parse(profile.tags_json || "{}");
+    const take = Math.min(parseInt(req.body?.take ?? 20, 10), 30);
+    // Use empty seen set so we get fresh picks (don't actually mark as seen)
+    const seenCutoff = new Date(Date.now() - SEEN_SUPPRESSION_DAYS * 86400000)
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", " ");
+    const seenRows = stmtGetSeen.all(userId, seenCutoff, MAX_SEEN);
+    const seenSet = new Set(seenRows.map((r) => r.post_id));
+    const totalSeen = stmtSeenCount.get(userId).c;
+    // We need a JWT for API calls — admin doesn't have one, so we use a lightweight search
+    // that doesn't require auth (public search endpoint)
+    const topTags = Object.entries(tagScore)
+      .filter(([tag]) => !isStopTag(tag))
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([tag, score]) => ({ tag, score: parseFloat(score.toFixed(2)) }));
+    const sampledArms = sampleArmsForUser(userId)
+      .slice(0, 15)
+      .map((a) => ({
+        tag: a.tag,
+        alpha: parseFloat(a.alpha.toFixed(2)),
+        beta: parseFloat(a.beta.toFixed(2)),
+        sampled: parseFloat(a.sampled.toFixed(4)),
+      }));
+    res.json({
+      ok: true,
+      topTags,
+      sampledArms,
+      seenCount: seenSet.size,
+      totalSeen,
+      message:
+        "Preview shows top tags and sampled arms. Full post preview requires user JWT.",
+    });
+  } catch (e) {
+    console.error(`[admin] Preview error for user ${userId}:`, e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Admin: decay arms for a single user
+app.post("/admin/user/:userId/decay-arms", adminAuth, (req, res) => {
+  const userId = parseInt(req.params.userId, 10);
+  const arms = stmtGetArms.all(userId);
+  if (arms.length === 0) return res.json({ ok: true, decayed: 0 });
+  const decay = db.transaction(() => {
+    for (const row of arms) {
+      const newAlpha = Math.max(BANDIT_PRIOR_ALPHA, row.alpha * 0.92);
+      const newBeta = Math.max(BANDIT_PRIOR_BETA, row.beta * 0.96);
+      stmtUpsertArm.run(userId, row.tag, newAlpha, newBeta);
+    }
+  });
+  decay();
+  console.log(`[admin] Decayed ${arms.length} arms for user ${userId}`);
+  res.json({ ok: true, decayed: arms.length });
+});
+
+// Admin: reset just bandit arms for a user (keeps profile + seen)
+app.post("/admin/user/:userId/reset-arms", adminAuth, (req, res) => {
+  const userId = parseInt(req.params.userId, 10);
+  stmtDeleteArms.run(userId);
+  stmtDeleteCooccurrence.run(userId);
+  console.log(`[admin] Reset arms + co-occurrence for user ${userId}`);
+  res.json({ ok: true });
+});
+
+// Admin: purge all stop-tag arms globally (V8 cleanup verification)
+app.post("/admin/users/purge-stop-arms", adminAuth, (req, res) => {
+  const allArms = db.prepare(`SELECT user_id, tag FROM bandit_arms`).all();
+  let purged = 0;
+  const purge = db.transaction(() => {
+    for (const row of allArms) {
+      if (isStopTag(row.tag)) {
+        db.prepare(`DELETE FROM bandit_arms WHERE user_id = ? AND tag = ?`).run(
+          row.user_id,
+          row.tag,
+        );
+        purged++;
+      }
+    }
+  });
+  purge();
+  console.log(
+    `[admin] Purged ${purged} stop-tag arms globally (of ${allArms.length} total)`,
+  );
+  res.json({ ok: true, purged, total: allArms.length });
+});
+
+// Admin: aggregated signal stats for a user
+app.get("/admin/user/:userId/signal-stats", adminAuth, (req, res) => {
+  const userId = parseInt(req.params.userId, 10);
+  const total = db
+    .prepare(`SELECT COUNT(*) as c FROM signals WHERE user_id = ?`)
+    .get(userId).c;
+  const breakdown = db
+    .prepare(
+      `SELECT signal, COUNT(*) as c FROM signals WHERE user_id = ? GROUP BY signal ORDER BY c DESC`,
+    )
+    .all(userId);
+  const recentCount = db
+    .prepare(
+      `SELECT COUNT(*) as c FROM signals WHERE user_id = ? AND created_at > datetime('now', '-7 days')`,
+    )
+    .get(userId).c;
+  const lastSignal = db
+    .prepare(
+      `SELECT created_at FROM signals WHERE user_id = ? ORDER BY id DESC LIMIT 1`,
+    )
+    .get(userId);
+  // Engagement rate: (likes + bookmarks + super_likes) / total
+  const positive = breakdown
+    .filter((r) => ["like", "bookmark", "super_like"].includes(r.signal))
+    .reduce((s, r) => s + r.c, 0);
+  const engagementRate =
+    total > 0 ? parseFloat((positive / total).toFixed(4)) : 0;
+  res.json({
+    total,
+    breakdown,
+    recentCount,
+    lastSignal: lastSignal?.created_at ?? null,
+    engagementRate,
+    positive,
+  });
+});
+
 // Force refresh profile from liked/bookmarked history
 app.post("/api/profile/refresh", jwtAuth, async (req, res) => {
   const userId = req.r34user.id;
