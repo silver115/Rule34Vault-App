@@ -525,38 +525,79 @@ app.use((req, res, next) => {
   res.header("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
   res.header(
     "Access-Control-Allow-Headers",
-    "Origin, Content-Type, Accept, Authorization",
+    "Origin, Content-Type, Accept, Authorization, x-site",
   );
   if (req.method === "OPTIONS") return res.sendStatus(200);
   next();
 });
 app.use(express.json());
 
-// ── Auth middleware ──────────────────────────────────────────────────
+// ── Auth middleware (dual-site: R34V JWT or e621 Basic Auth) ─────────
 async function jwtAuth(req, res, next) {
   const h = req.headers["authorization"];
-  if (!h || !h.startsWith("Bearer ")) {
+  if (!h)
     return res.status(401).json({ error: "Missing Authorization header" });
-  }
-  const jwt = h.slice(7);
-  try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 8000);
-    const r = await fetch(`${R34_BASE}/api/v2/account/me`, {
-      headers: { Authorization: `Bearer ${jwt}`, Accept: "application/json" },
-      signal: ctrl.signal,
-    });
-    clearTimeout(t);
-    if (!r.ok) return res.status(401).json({ error: "Invalid token" });
-    const user = await r.json();
-    if (!user?.id)
-      return res.status(401).json({ error: "Could not identify user" });
-    req.r34user = user;
-    req.r34jwt = jwt;
-    next();
-  } catch (e) {
-    console.error("[auth]", e.message);
-    return res.status(500).json({ error: "Auth check failed" });
+
+  // Detect site from custom header (client sends x-site: e621 or r34vault)
+  const site = (req.headers["x-site"] || "").toLowerCase();
+
+  if (site === "e621" || (!h.startsWith("Bearer ") && h.startsWith("Basic "))) {
+    // e621 Basic Auth: base64(username:apikey)
+    try {
+      const decoded = Buffer.from(h.slice(6), "base64").toString("utf-8");
+      const [username, apiKey] = decoded.split(":");
+      if (!username || !apiKey)
+        return res.status(401).json({ error: "Invalid e621 credentials" });
+      // Validate by fetching user profile from e621
+      const e6user = await e621Fetch(
+        "GET",
+        `/users/${encodeURIComponent(username)}.json`,
+        null,
+        username,
+        apiKey,
+      );
+      if (!e6user?.id)
+        return res.status(401).json({ error: "Invalid e621 user" });
+      // Use negative ID space to avoid collision with R34V user IDs
+      req.r34user = {
+        id: -e6user.id,
+        username: e6user.name,
+        name: e6user.name,
+      };
+      req.r34jwt = h.slice(6); // pass the base64 token through
+      req.isE621 = true;
+      req.e621Username = username;
+      req.e621ApiKey = apiKey;
+      next();
+    } catch (e) {
+      console.error("[auth/e621]", e.message);
+      return res.status(401).json({ error: "e621 auth failed: " + e.message });
+    }
+  } else if (h.startsWith("Bearer ")) {
+    // R34V JWT auth (existing flow)
+    const jwt = h.slice(7);
+    try {
+      const ctrl = new AbortController();
+      const t = setTimeout(() => ctrl.abort(), 8000);
+      const r = await fetch(`${R34_BASE}/api/v2/account/me`, {
+        headers: { Authorization: `Bearer ${jwt}`, Accept: "application/json" },
+        signal: ctrl.signal,
+      });
+      clearTimeout(t);
+      if (!r.ok) return res.status(401).json({ error: "Invalid token" });
+      const user = await r.json();
+      if (!user?.id)
+        return res.status(401).json({ error: "Could not identify user" });
+      req.r34user = user;
+      req.r34jwt = jwt;
+      req.isE621 = false;
+      next();
+    } catch (e) {
+      console.error("[auth]", e.message);
+      return res.status(500).json({ error: "Auth check failed" });
+    }
+  } else {
+    return res.status(401).json({ error: "Unsupported Authorization type" });
   }
 }
 
@@ -588,6 +629,97 @@ const r34Post = (jwt, endpoint, body, ms) =>
   r34Fetch(jwt, "POST", endpoint, body, ms);
 const r34Get = (jwt, endpoint, ms) =>
   r34Fetch(jwt, "GET", endpoint, null, ms ?? 10000);
+
+// ── e621 API helpers ─────────────────────────────────────────────────
+const E621_BASE = "https://e621.net";
+const E621_UA = "Rule34VaultRecServer/1.0 (by Puro115 on e621)";
+let e621LastReq = 0;
+
+async function e621Fetch(method, path, params, username, apiKey) {
+  // Rate limit: 1 req/sec
+  const now = Date.now();
+  if (now - e621LastReq < 600)
+    await new Promise((r) => setTimeout(r, 600 - (now - e621LastReq)));
+  e621LastReq = Date.now();
+
+  let url = `${E621_BASE}${path}`;
+  if (params) {
+    const qs = new URLSearchParams(params).toString();
+    url += (url.includes("?") ? "&" : "?") + qs;
+  }
+  const headers = { "User-Agent": E621_UA, Accept: "application/json" };
+  if (username && apiKey) {
+    headers["Authorization"] =
+      `Basic ${Buffer.from(`${username}:${apiKey}`).toString("base64")}`;
+  }
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 15000);
+  try {
+    const r = await fetch(url, { method, headers, signal: ctrl.signal });
+    if (!r.ok) throw new Error(`e621 ${method} ${path}: HTTP ${r.status}`);
+    return await r.json();
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+// e621 tag category → app tag type
+const E621_CAT_MAP = {
+  general: 1,
+  artist: 8,
+  copyright: 2,
+  character: 4,
+  species: 1,
+  meta: 32,
+  lore: 1,
+  invalid: 1,
+};
+
+function adaptE621Tags(e6tags) {
+  const result = [];
+  for (const [cat, names] of Object.entries(e6tags)) {
+    const type = E621_CAT_MAP[cat] ?? 1;
+    for (const name of names) {
+      result.push({ id: 0, value: name, count: 0, type });
+    }
+  }
+  return result;
+}
+
+function adaptE621Post(e6) {
+  const isVideo = ["webm", "mp4"].includes(e6.file?.ext);
+  return {
+    id: e6.id,
+    created: e6.created_at,
+    posted: e6.created_at,
+    likes: e6.fav_count ?? 0,
+    comments: e6.comment_count ?? 0,
+    type: isVideo ? 1 : 0,
+    status: 0,
+    uploaderId: e6.uploader_id,
+    width: e6.file?.width ?? 0,
+    height: e6.file?.height ?? 0,
+    tags: adaptE621Tags(e6.tags ?? {}),
+  };
+}
+
+async function fetchE621Favorites(username, apiKey, limit = 80) {
+  const data = await e621Fetch(
+    "GET",
+    "/favorites.json",
+    { limit: String(Math.min(limit, 320)) },
+    username,
+    apiKey,
+  );
+  return (data?.posts ?? []).map(adaptE621Post);
+}
+
+async function searchE621Posts(tags, limit = 30, username, apiKey) {
+  const params = { limit: String(Math.min(limit, 320)) };
+  if (tags && tags.length > 0) params.tags = tags.join(" ");
+  const data = await e621Fetch("GET", "/posts.json", params, username, apiKey);
+  return (data?.posts ?? []).map(adaptE621Post);
+}
 
 // Paginate through posts; stop early if we hit an already-seen post ID (incremental)
 async function fetchAllPaginated(jwt, endpoint, maxPages = 10, stopAtId = 0) {
@@ -826,7 +958,153 @@ function recordCooccurrence(userId, tags) {
   }
 }
 
-// ── Profile management ──────────────────────────────────────────────
+// ── e621 Profile management ──────────────────────────────────────────
+async function refreshE621Profile(userId, username, apiKey) {
+  console.log(`[profile/e621] Full rebuild for user ${userId} (${username})`);
+  const favorites = await fetchE621Favorites(username, apiKey, 200);
+
+  if (favorites.length === 0) {
+    stmtUpsertProfile.run(userId, username, "{}");
+    return {};
+  }
+
+  const tagScore = {};
+  const total = favorites.length;
+
+  favorites.forEach((post, idx) => {
+    const recencyW = Math.exp(-DECAY_LAMBDA * idx);
+    for (const tag of post.tags ?? []) {
+      if (isStopTag(tag.value)) continue;
+      const tw = TAG_TYPE_WEIGHT[tag.type] ?? 1;
+      const idf = getIdfWeight(tag.value);
+      tagScore[tag.value] = (tagScore[tag.value] ?? 0) + tw * recencyW * idf;
+    }
+  });
+
+  stmtUpsertProfile.run(userId, username, JSON.stringify(tagScore));
+
+  // Update bandit arms
+  const initArms = db.transaction((uid, scores) => {
+    for (const [tag, score] of Object.entries(scores)) {
+      if (isStopTag(tag)) continue;
+      const alpha = BANDIT_PRIOR_ALPHA + Math.min(score, 20);
+      stmtUpsertArm.run(uid, tag, alpha, BANDIT_PRIOR_BETA);
+    }
+  });
+  initArms(userId, tagScore);
+
+  // Update IDF
+  updateIdfForPosts(favorites);
+
+  // Record co-occurrence
+  const recordCooccurrences = db.transaction((uid, posts) => {
+    for (const post of posts) {
+      if (post.tags && post.tags.length > 0) recordCooccurrence(uid, post.tags);
+    }
+  });
+  recordCooccurrences(userId, favorites.slice(0, 80));
+
+  console.log(
+    `[profile/e621] User ${userId}: ${Object.keys(tagScore).length} tags from ${favorites.length} favorites`,
+  );
+  return tagScore;
+}
+
+async function buildE621Recommendations(
+  userId,
+  username,
+  apiKey,
+  tagScore,
+  seenSet,
+  take,
+) {
+  const sampledArms = sampleArmsForUser(userId);
+  const rankedTags =
+    sampledArms.length > 0
+      ? sampledArms.map((a) => a.tag)
+      : Object.entries(tagScore)
+          .filter(([t]) => !isStopTag(t))
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 20)
+          .map(([v]) => v);
+
+  if (rankedTags.length === 0) return [];
+
+  const topArms = rankedTags.slice(0, 15);
+  const cooccPairs = stmtGetCooccurrence.all(userId, 5);
+
+  // e621 supports max 6 tags per search (including meta tags)
+  // Build 4 pools: core, secondary, co-occurrence, popular
+  const pool0Tags = topArms.slice(0, 2);
+  const pool1Tags = topArms.slice(2, 4);
+  const cooccTags =
+    cooccPairs.length > 0 ? [cooccPairs[0].tag_a, cooccPairs[0].tag_b] : [];
+
+  const fetchN = Math.ceil(take * 3);
+
+  const results = await Promise.allSettled([
+    pool0Tags.length
+      ? searchE621Posts(pool0Tags, fetchN, username, apiKey).catch(() => [])
+      : Promise.resolve([]),
+    pool1Tags.length
+      ? searchE621Posts(pool1Tags, fetchN, username, apiKey).catch(() => [])
+      : Promise.resolve([]),
+    cooccTags.length === 2
+      ? searchE621Posts(cooccTags, fetchN, username, apiKey).catch(() => [])
+      : Promise.resolve([]),
+    searchE621Posts(
+      ["order:favcount"],
+      Math.ceil(fetchN / 2),
+      username,
+      apiKey,
+    ).catch(() => []),
+  ]);
+
+  const pools = results.map((r) => (r.status === "fulfilled" ? r.value : []));
+  const globalSeen = new Set(seenSet);
+
+  function pickFromPool(pool, max) {
+    const candidates = pool
+      .filter((p) => !globalSeen.has(p.id))
+      .map((p) => ({ post: p, score: scorePost(p, tagScore) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, max * 3);
+    fyShuffleAll(candidates);
+    const picked = [];
+    for (const { post } of candidates) {
+      if (!globalSeen.has(post.id) && picked.length < max) {
+        picked.push(post);
+        globalSeen.add(post.id);
+      }
+    }
+    return picked;
+  }
+
+  const coreMax = Math.ceil(take * 0.35);
+  const secMax = Math.ceil(take * 0.25);
+  const coMax = Math.ceil(take * 0.2);
+  const popMax = Math.ceil(take * 0.2);
+
+  const picked = [
+    ...pickFromPool(pools[0], coreMax),
+    ...pickFromPool(pools[1], secMax),
+    ...pickFromPool(pools[2], coMax),
+    ...pickFromPool(pools[3], popMax),
+  ];
+
+  const interleaved = fyInterleave(
+    picked.slice(0, coreMax),
+    picked.slice(coreMax, coreMax + secMax),
+    picked.slice(coreMax + secMax, coreMax + secMax + coMax),
+    picked.slice(coreMax + secMax + coMax),
+  );
+  const diverse = enforceDiversity(interleaved);
+  fyShuffleWindow(diverse, 8);
+
+  return diverse.slice(0, take);
+}
+
+// ── R34V Profile management ─────────────────────────────────────────
 async function refreshProfile(
   userId,
   jwt,
@@ -1246,35 +1524,63 @@ app.post("/api/recommendations", jwtAuth, async (req, res) => {
   const take = Math.min(parseInt(req.body.take ?? 30, 10), 50);
 
   try {
-    // Load profile (auto-refreshes if stale)
-    const tagScore = await getProfile(
-      userId,
-      req.r34jwt,
-      false,
-      req.r34user.username ?? req.r34user.name ?? null,
-    );
+    let tagScore, posts;
 
-    // Load seen post IDs: only posts seen within the suppression window
+    // Load seen post IDs (shared between both sites)
     const seenCutoff = new Date(Date.now() - SEEN_SUPPRESSION_DAYS * 86400000)
       .toISOString()
       .slice(0, 19)
       .replace("T", " ");
     const seenRows = stmtGetSeen.all(userId, seenCutoff, MAX_SEEN);
     const seenSet = new Set(seenRows.map((r) => r.post_id));
-
-    // Page = total seen ÷ take (roughly how many pages in)
     const totalSeen = stmtSeenCount.get(userId).c;
     const page = Math.floor(totalSeen / Math.max(take, 1));
 
-    const posts = await buildRecommendations(
-      userId,
-      req.r34jwt,
-      tagScore,
-      seenSet,
-      take,
-      page,
-      totalSeen,
-    );
+    if (req.isE621) {
+      // ── e621 path ──
+      const row = stmtGetProfile.get(userId);
+      const ageMs = row
+        ? Date.now() - new Date(row.refreshed).getTime()
+        : Infinity;
+      if (!row || ageMs >= FULL_REBUILD_TTL_MS) {
+        tagScore = await refreshE621Profile(
+          userId,
+          req.e621Username,
+          req.e621ApiKey,
+        );
+      } else {
+        try {
+          tagScore = JSON.parse(row.tags_json ?? "{}");
+        } catch {
+          tagScore = {};
+        }
+      }
+      posts = await buildE621Recommendations(
+        userId,
+        req.e621Username,
+        req.e621ApiKey,
+        tagScore,
+        seenSet,
+        take,
+      );
+    } else {
+      // ── R34V path (existing) ──
+      tagScore = await getProfile(
+        userId,
+        req.r34jwt,
+        false,
+        req.r34user.username ?? req.r34user.name ?? null,
+      );
+      posts = await buildRecommendations(
+        userId,
+        req.r34jwt,
+        tagScore,
+        seenSet,
+        take,
+        page,
+        totalSeen,
+      );
+    }
 
     if (posts.length === 0) {
       return res.json({ posts: [], topTags: [] });

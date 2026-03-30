@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import { getActiveSite } from "../api/index";
 import { Post, Tag } from "../api/rule34vault";
 
 function resolveRecServerUrl(): string {
@@ -10,13 +11,22 @@ function resolveRecServerUrl(): string {
   ].filter(Boolean);
   const envValue =
     process.env.EXPO_PUBLIC_REC_SERVER_URL || process.env.REC_SERVER_URL;
-  const fromExtra = extraSources.find((extra) => extra?.recServerUrl)?.recServerUrl;
+  const fromExtra = extraSources.find(
+    (extra) => extra?.recServerUrl,
+  )?.recServerUrl;
   return (envValue || fromExtra || "").trim();
 }
 
 export const REC_SERVER_URL: string = resolveRecServerUrl();
 
-export type RecSignal = "like" | "bookmark" | "super_like" | "complete" | "skip" | "view_duration" | "attention";
+export type RecSignal =
+  | "like"
+  | "bookmark"
+  | "super_like"
+  | "complete"
+  | "skip"
+  | "view_duration"
+  | "attention";
 
 export interface RecResult {
   posts: Post[];
@@ -26,17 +36,20 @@ export interface RecResult {
 async function recFetch(
   path: string,
   jwt: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
 ): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 12000);
+  const isE621 = getActiveSite() === "e621";
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: isE621 ? `Basic ${jwt}` : `Bearer ${jwt}`,
+  };
+  if (isE621) headers["x-site"] = "e621";
   try {
     return await fetch(`${REC_SERVER_URL}${path}`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${jwt}`,
-      },
+      headers,
       body: JSON.stringify(body),
       signal: ctrl.signal,
     });
@@ -58,7 +71,7 @@ export function hasRecServer(): boolean {
  */
 export async function fetchRecommendations(
   jwt: string,
-  take = 30
+  take = 30,
 ): Promise<RecResult | null> {
   if (!REC_SERVER_URL) return null;
   try {
@@ -84,7 +97,7 @@ export async function sendRecSignal(
   postId: number,
   signal: RecSignal,
   tags?: Tag[],
-  duration?: number
+  duration?: number,
 ): Promise<void> {
   if (!REC_SERVER_URL) return;
   try {
@@ -102,7 +115,7 @@ export async function sendViewDuration(
   jwt: string,
   postId: number,
   durationSec: number,
-  tags?: Tag[]
+  tags?: Tag[],
 ): Promise<void> {
   if (!REC_SERVER_URL || durationSec < 1) return;
   return sendRecSignal(jwt, postId, "view_duration", tags, durationSec);
@@ -121,7 +134,7 @@ export async function sendAttentionSignal(
   durationSec: number,
   completionRate: number,
   liked: boolean,
-  replays = 0
+  replays = 0,
 ): Promise<void> {
   // < 3s = immediate scroll, not enough data to form an opinion — send nothing
   if (!REC_SERVER_URL || durationSec < 3) return;
