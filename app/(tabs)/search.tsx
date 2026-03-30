@@ -12,8 +12,15 @@ import {
     TextInput,
     View,
 } from "react-native";
-import api, { Tag } from "../../api/rule34vault";
-import { Colors, FontSize, getTagColor, Radius, Spacing } from "../../constants/theme";
+import { getActiveApi } from "../../api/index";
+import { Tag } from "../../api/rule34vault";
+import {
+    Colors,
+    FontSize,
+    getTagColor,
+    Radius,
+    Spacing,
+} from "../../constants/theme";
 import { useAppTheme } from "../../contexts/ThemeContext";
 
 async function storageGet(key: string): Promise<string | null> {
@@ -22,12 +29,18 @@ async function storageGet(key: string): Promise<string | null> {
 }
 
 async function storageSet(key: string, val: string): Promise<void> {
-  if (Platform.OS === "web") { localStorage.setItem(key, val); return; }
+  if (Platform.OS === "web") {
+    localStorage.setItem(key, val);
+    return;
+  }
   await SecureStore.setItemAsync(key, val);
 }
 
 async function storageDel(key: string): Promise<void> {
-  if (Platform.OS === "web") { localStorage.removeItem(key); return; }
+  if (Platform.OS === "web") {
+    localStorage.removeItem(key);
+    return;
+  }
   await SecureStore.deleteItemAsync(key);
 }
 
@@ -50,7 +63,7 @@ export default function SearchScreen() {
 
   async function loadTrending() {
     try {
-      const data = await api.getTrendingTags();
+      const data = await getActiveApi().getTrendingTags();
       setTrendingTags(data);
     } catch {}
   }
@@ -85,10 +98,10 @@ export default function SearchScreen() {
     setIsLoading(true);
     setHasSearched(true);
     try {
-      const data = await api.searchTags(q.trim());
+      const data = await getActiveApi().searchTags(q.trim());
       setTags(data);
-    } catch {}
-    finally {
+    } catch {
+    } finally {
       setIsLoading(false);
     }
   }, []);
@@ -103,18 +116,27 @@ export default function SearchScreen() {
   // Decide what to show
   const showRecent = !hasSearched && recentTags.length > 0;
   const displayTags = hasSearched ? tags : trendingTags;
-  const sectionTitle = hasSearched ? `Results (${tags.length})` : "Trending Tags";
+  const sectionTitle = hasSearched
+    ? `Results (${tags.length})`
+    : "Trending Tags";
 
   function navigateToTag(item: Tag) {
     saveRecent(item);
-    router.push({ pathname: "/tag/[id]", params: { id: String(item.id), name: item.value } });
+    router.push({
+      pathname: "/tag/[id]",
+      params: { id: String(item.id), name: item.value },
+    });
   }
 
   function renderTag({ item }: { item: Tag }) {
     const color = getTagColor(item.type);
     return (
       <Pressable
-        style={({ pressed }) => [styles.tagRow, { backgroundColor: colors.bgCard }, pressed && { opacity: 0.75 }]}
+        style={({ pressed }) => [
+          styles.tagRow,
+          { backgroundColor: colors.bgCard },
+          pressed && { opacity: 0.75 },
+        ]}
         onPress={() => navigateToTag(item)}
       >
         <View style={[styles.tagDot, { backgroundColor: color }]} />
@@ -122,7 +144,9 @@ export default function SearchScreen() {
           <Text style={[styles.tagName, { color }]}>{item.value}</Text>
           <Text style={[styles.tagCount, { color: colors.textMuted }]}>
             {formatCount(item.count)} posts
-            {item.popularity ? ` · ${formatCount(item.popularity)} popular` : ""}
+            {item.popularity
+              ? ` · ${formatCount(item.popularity)} popular`
+              : ""}
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
@@ -133,20 +157,28 @@ export default function SearchScreen() {
   function renderRecentTag({ item }: { item: Tag }) {
     return (
       <Pressable
-        style={({ pressed }) => [styles.tagRow, { backgroundColor: colors.bgCard }, pressed && { opacity: 0.75 }]}
+        style={({ pressed }) => [
+          styles.tagRow,
+          { backgroundColor: colors.bgCard },
+          pressed && { opacity: 0.75 },
+        ]}
         onPress={() => navigateToTag(item)}
       >
         <Ionicons name="time-outline" size={16} color={colors.textMuted} />
         <View style={styles.tagInfo}>
-          <Text style={[styles.tagName, { color: colors.text }]}>{item.value}</Text>
+          <Text style={[styles.tagName, { color: colors.text }]}>
+            {item.value}
+          </Text>
         </View>
         <Pressable
           hitSlop={8}
-          onPress={() => setRecentTags((prev) => {
-            const next = prev.filter((t) => t.id !== item.id);
-            storageSet(RECENT_KEY, JSON.stringify(next)).catch(() => {});
-            return next;
-          })}
+          onPress={() =>
+            setRecentTags((prev) => {
+              const next = prev.filter((t) => t.id !== item.id);
+              storageSet(RECENT_KEY, JSON.stringify(next)).catch(() => {});
+              return next;
+            })
+          }
         >
           <Ionicons name="close" size={16} color={colors.textMuted} />
         </Pressable>
@@ -156,7 +188,12 @@ export default function SearchScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      <View style={[styles.searchBar, { backgroundColor: colors.bgTertiary, borderColor: colors.border }]}>
+      <View
+        style={[
+          styles.searchBar,
+          { backgroundColor: colors.bgTertiary, borderColor: colors.border },
+        ]}
+      >
         <Ionicons name="search" size={18} color={colors.textMuted} />
         <TextInput
           style={[styles.input, { color: colors.text }]}
@@ -179,9 +216,18 @@ export default function SearchScreen() {
       {showRecent && (
         <>
           <View style={styles.sectionRow}>
-            <Text style={[styles.sectionTitle, { color: colors.textSecondary, marginHorizontal: 0 }]}>Recent</Text>
+            <Text
+              style={[
+                styles.sectionTitle,
+                { color: colors.textSecondary, marginHorizontal: 0 },
+              ]}
+            >
+              Recent
+            </Text>
             <Pressable onPress={clearRecent} hitSlop={8}>
-              <Text style={[styles.clearBtn, { color: colors.accent }]}>Clear</Text>
+              <Text style={[styles.clearBtn, { color: colors.accent }]}>
+                Clear
+              </Text>
             </Pressable>
           </View>
           <FlatList
@@ -195,7 +241,9 @@ export default function SearchScreen() {
         </>
       )}
 
-      <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>{sectionTitle}</Text>
+      <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>
+        {sectionTitle}
+      </Text>
 
       {isLoading ? (
         <View style={styles.center}>
@@ -211,8 +259,14 @@ export default function SearchScreen() {
           ListEmptyComponent={
             hasSearched ? (
               <View style={styles.emptyState}>
-                <Ionicons name="search-outline" size={48} color={colors.textMuted} />
-                <Text style={[styles.empty, { color: colors.textMuted }]}>No tags found for "{query}"</Text>
+                <Ionicons
+                  name="search-outline"
+                  size={48}
+                  color={colors.textMuted}
+                />
+                <Text style={[styles.empty, { color: colors.textMuted }]}>
+                  No tags found for "{query}"
+                </Text>
               </View>
             ) : null
           }

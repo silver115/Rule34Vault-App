@@ -1,24 +1,25 @@
+import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  Pressable,
-  StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
-  ActivityIndicator,
-  Alert,
+    ActivityIndicator,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    TextInput,
+    View
 } from "react-native";
-import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Colors, FontSize, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
-import { Colors, Radius, Spacing, FontSize } from "../constants/theme";
+import { useSite } from "../contexts/SiteContext";
 import { useAppTheme } from "../contexts/ThemeContext";
 
 export default function LoginScreen() {
   const router = useRouter();
   const { login } = useAuth();
+  const { isE621 } = useSite();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -27,7 +28,11 @@ export default function LoginScreen() {
 
   async function handleLogin() {
     if (!email.trim() || !password.trim()) {
-      setError("Please enter both email and password");
+      setError(
+        isE621
+          ? "Please enter both username and API key"
+          : "Please enter both email and password",
+      );
       return;
     }
     setIsLoading(true);
@@ -51,40 +56,68 @@ export default function LoginScreen() {
     >
       <View style={styles.inner}>
         <View style={styles.header}>
-          <Ionicons name="shield-checkmark" size={48} color={colors.accent} />
-          <Text style={[styles.title, { color: colors.text }]}>Rule34Vault</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>Sign in to your account</Text>
+          <Ionicons
+            name={isE621 ? "paw" : "shield-checkmark"}
+            size={48}
+            color={isE621 ? "#00549f" : colors.accent}
+          />
+          <Text style={[styles.title, { color: colors.text }]}>
+            {isE621 ? "e621" : "Rule34Vault"}
+          </Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            {isE621
+              ? "Sign in with your e621 account"
+              : "Sign in to your account"}
+          </Text>
         </View>
 
         {error && (
           <View style={styles.errorBox}>
             <Ionicons name="alert-circle" size={16} color={colors.danger} />
-            <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+            <Text style={[styles.errorText, { color: colors.danger }]}>
+              {error}
+            </Text>
           </View>
         )}
 
         <View style={styles.form}>
-          <View style={[styles.inputWrap, { backgroundColor: colors.bgTertiary, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.inputWrap,
+              {
+                backgroundColor: colors.bgTertiary,
+                borderColor: colors.border,
+              },
+            ]}
+          >
             <Ionicons
-              name="mail-outline"
+              name={isE621 ? "person-outline" : "mail-outline"}
               size={18}
               color={colors.textMuted}
               style={styles.inputIcon}
             />
             <TextInput
               style={[styles.input, { color: colors.text }]}
-              placeholder="Email"
+              placeholder={isE621 ? "e621 Username" : "Email"}
               placeholderTextColor={colors.textMuted}
               value={email}
               onChangeText={setEmail}
-              keyboardType="email-address"
+              keyboardType={isE621 ? "default" : "email-address"}
               autoCapitalize="none"
               autoCorrect={false}
               editable={!isLoading}
             />
           </View>
 
-          <View style={[styles.inputWrap, { backgroundColor: colors.bgTertiary, borderColor: colors.border }]}>
+          <View
+            style={[
+              styles.inputWrap,
+              {
+                backgroundColor: colors.bgTertiary,
+                borderColor: colors.border,
+              },
+            ]}
+          >
             <Ionicons
               name="lock-closed-outline"
               size={18}
@@ -93,7 +126,7 @@ export default function LoginScreen() {
             />
             <TextInput
               style={[styles.input, { color: colors.text, flex: 1 }]}
-              placeholder="Password"
+              placeholder={isE621 ? "API Key" : "Password"}
               placeholderTextColor={colors.textMuted}
               value={password}
               onChangeText={setPassword}
@@ -115,7 +148,11 @@ export default function LoginScreen() {
           </View>
 
           <Pressable
-            style={[styles.loginBtn, { backgroundColor: colors.accent }, isLoading && styles.loginBtnDisabled]}
+            style={[
+              styles.loginBtn,
+              { backgroundColor: colors.accent },
+              isLoading && styles.loginBtnDisabled,
+            ]}
             onPress={handleLogin}
             disabled={isLoading}
           >
@@ -130,6 +167,24 @@ export default function LoginScreen() {
         <Text style={[styles.disclaimer, { color: colors.textMuted }]}>
           Your credentials are stored securely on-device only.
         </Text>
+        {isE621 && (
+          <Pressable
+            onPress={() => {
+              if (Platform.OS === "web") {
+                window.open("https://e621.net/users/home", "_blank");
+              } else {
+                const Linking = require("react-native").Linking;
+                Linking.openURL("https://e621.net/users/home");
+              }
+            }}
+            style={styles.apiKeyLink}
+          >
+            <Ionicons name="key-outline" size={14} color={colors.accent} />
+            <Text style={[styles.apiKeyLinkText, { color: colors.accent }]}>
+              Get your API key at e621.net
+            </Text>
+          </Pressable>
+        )}
       </View>
     </KeyboardAvoidingView>
   );
@@ -222,5 +277,16 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     textAlign: "center",
     marginTop: Spacing.xl,
+  },
+  apiKeyLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: Spacing.md,
+  },
+  apiKeyLinkText: {
+    fontSize: FontSize.sm,
+    fontWeight: "600",
   },
 });

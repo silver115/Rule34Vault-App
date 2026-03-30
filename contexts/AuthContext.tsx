@@ -1,19 +1,33 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useState,
+} from "react";
 import { Platform } from "react-native";
-import api, { UserProfile } from "../api/rule34vault";
+import e621Api from "../api/e621";
+import { r34vaultApi as r34Api, UserProfile } from "../api/rule34vault";
+import { useSite } from "./SiteContext";
 
 // Storage abstraction: SecureStore on native, localStorage on web
 const storage = {
   async getItem(key: string): Promise<string | null> {
     if (Platform.OS === "web") {
-      try { return localStorage.getItem(key); } catch { return null; }
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
     }
     const SecureStore = require("expo-secure-store");
     return SecureStore.getItemAsync(key);
   },
   async setItem(key: string, value: string): Promise<void> {
     if (Platform.OS === "web") {
-      try { localStorage.setItem(key, value); } catch {}
+      try {
+        localStorage.setItem(key, value);
+      } catch {}
       return;
     }
     const SecureStore = require("expo-secure-store");
@@ -21,7 +35,9 @@ const storage = {
   },
   async removeItem(key: string): Promise<void> {
     if (Platform.OS === "web") {
-      try { localStorage.removeItem(key); } catch {}
+      try {
+        localStorage.removeItem(key);
+      } catch {}
       return;
     }
     const SecureStore = require("expo-secure-store");
@@ -34,7 +50,7 @@ interface AuthState {
   token: string | null;
   isLoading: boolean;
   isLoggedIn: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (emailOrUsername: string, passwordOrApiKey: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -48,60 +64,111 @@ const AuthContext = createContext<AuthState>({
 });
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const { activeSite, isE621, siteReady } = useSite();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Reload auth whenever site changes
   useEffect(() => {
-    loadStoredAuth();
-  }, []);
+    if (siteReady) loadStoredAuth();
+  }, [activeSite, siteReady]);
 
   async function loadStoredAuth() {
+    setIsLoading(true);
     try {
-      const storedToken = await storage.getItem("r34v_token");
-      const storedUser = await storage.getItem("r34v_user");
-      if (storedToken && storedUser) {
-        const parsed = JSON.parse(storedUser) as UserProfile;
-        api.setAuth(storedToken, parsed);
-        setToken(storedToken);
-        setUser(parsed);
-        console.log('JWT:', storedToken);
-        // Refresh profile data in background
-        try {
-          const fresh = await api.getMe();
-          setUser(fresh);
-          api.setAuth(storedToken, fresh);
-          await storage.setItem("r34v_user", JSON.stringify(fresh));
-        } catch {}
+      if (isE621) {
+        // e621: username + API key stored separately
+        const storedUser = await storage.getItem("e621_user");
+        const storedUsername = await storage.getItem("e621_username");
+        const storedKey = await storage.getItem("e621_apikey");
+        if (storedUsername && storedKey && storedUser) {
+          const parsed = JSON.parse(storedUser) as UserProfile;
+          e621Api.setAuth(storedUsername, storedKey, parsed);
+          setToken(btoa(`${storedUsername}:${storedKey}`));
+          setUser(parsed);
+          // Refresh profile in background
+          try {
+            const fresh = await e621Api.getMe();
+            setUser(fresh);
+            await storage.setItem("e621_user", JSON.stringify(fresh));
+          } catch {}
+        } else {
+          setToken(null);
+          setUser(null);
+        }
+      } else {
+        // Rule34Vault: JWT token
+        const storedToken = await storage.getItem("r34v_token");
+        const storedUser = await storage.getItem("r34v_user");
+        if (storedToken && storedUser) {
+          const parsed = JSON.parse(storedUser) as UserProfile;
+          r34Api.setAuth(storedToken, parsed);
+          setToken(storedToken);
+          setUser(parsed);
+          // Refresh profile in background
+          try {
+            const fresh = await r34Api.getMe();
+            setUser(fresh);
+            r34Api.setAuth(storedToken, fresh);
+            await storage.setItem("r34v_user", JSON.stringify(fresh));
+          } catch {}
+        } else {
+          setToken(null);
+          setUser(null);
+        }
       }
     } catch (e) {
       console.warn("Failed to load stored auth:", e);
+      setToken(null);
+      setUser(null);
     } finally {
       setIsLoading(false);
     }
   }
 
-  const login = useCallback(async (email: string, password: string) => {
-    const resp = await api.login(email, password);
-    setToken(resp.jwt);
-    setUser(resp.user);
-    await storage.setItem("r34v_token", resp.jwt);
-    await storage.setItem("r34v_user", JSON.stringify(resp.user));
-    // Fetch full profile with stats
-    try {
-      const fullUser = await api.getMe();
-      setUser(fullUser);
-      await storage.setItem("r34v_user", JSON.stringify(fullUser));
-    } catch {}
-  }, []);
+  const login = useCallback(
+    async (emailOrUsername: string, passwordOrApiKey: string) => {
+      if (isE621) {
+        // e621: username + API key → Basic Auth
+        const resp = await e621Api.login(emailOrUsername, passwordOrApiKey);
+        setToken(resp.jwt); // synthetic base64 token
+        setUser(resp.user);
+        await storage.setItem("e621_username", emailOrUsername);
+        await storage.setItem("e621_apikey", passwordOrApiKey);
+        await storage.setItem("e621_user", JSON.stringify(resp.user));
+      } else {
+        // R34V: email + password → JWT
+        const resp = await r34Api.login(emailOrUsername, passwordOrApiKey);
+        setToken(resp.jwt);
+        setUser(resp.user);
+        await storage.setItem("r34v_token", resp.jwt);
+        await storage.setItem("r34v_user", JSON.stringify(resp.user));
+        // Fetch full profile with stats
+        try {
+          const fullUser = await r34Api.getMe();
+          setUser(fullUser);
+          await storage.setItem("r34v_user", JSON.stringify(fullUser));
+        } catch {}
+      }
+    },
+    [isE621],
+  );
 
   const logout = useCallback(async () => {
-    api.logout();
+    if (isE621) {
+      e621Api.clearAuth();
+      await storage.removeItem("e621_username");
+      await storage.removeItem("e621_apikey");
+      await storage.removeItem("e621_user");
+    } else {
+      r34Api.logout();
+      await storage.removeItem("r34v_token");
+      await storage.removeItem("r34v_user");
+    }
     setToken(null);
     setUser(null);
-    await storage.removeItem("r34v_token");
-    await storage.removeItem("r34v_user");
-  }, []);
+  }, [isE621]);
 
   return (
     <AuthContext.Provider

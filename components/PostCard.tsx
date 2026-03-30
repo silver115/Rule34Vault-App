@@ -13,13 +13,14 @@ import {
     View,
     useWindowDimensions,
 } from "react-native";
-import api, { Post, getMediaUrl, getMediaUrlDirect } from "../api/rule34vault";
+import api, { Post } from "../api/rule34vault";
 import { Colors, FontSize, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
 import { usePlaylist } from "../contexts/PlaylistContext";
 import { useSettings } from "../contexts/SettingsContext";
 import { useAppTheme } from "../contexts/ThemeContext";
 import { downloadMedia } from "../utils/download";
+import { getSiteMediaUrl } from "../utils/media";
 import { sendRecSignal } from "../utils/recommendations";
 
 const NUM_COLUMNS = 2;
@@ -36,7 +37,9 @@ export function isBrokenPost(id: number): boolean {
 
 export function onBrokenPostsChange(listener: () => void) {
   brokenListeners.push(listener);
-  return () => { brokenListeners = brokenListeners.filter((l) => l !== listener); };
+  return () => {
+    brokenListeners = brokenListeners.filter((l) => l !== listener);
+  };
 }
 
 export function markBroken(id: number) {
@@ -51,11 +54,29 @@ interface PostCardProps {
   onPress?: () => void;
   badgeText?: string;
   onBroken?: (id: number) => void;
-  actionState?: { isLiked: boolean; isBookmarked: boolean; isSuperLiked: boolean };
+  actionState?: {
+    isLiked: boolean;
+    isBookmarked: boolean;
+    isSuperLiked: boolean;
+  };
   onActionChange?: (postId: number) => void;
 }
 
-function Thumbnail({ uri, fallbackUri, width, height, onFinalError, priority = "normal" }: { uri: string; fallbackUri?: string; width: number; height: number; onFinalError?: () => void; priority?: "high" | "normal" | "low" }) {
+function Thumbnail({
+  uri,
+  fallbackUri,
+  width,
+  height,
+  onFinalError,
+  priority = "normal",
+}: {
+  uri: string;
+  fallbackUri?: string;
+  width: number;
+  height: number;
+  onFinalError?: () => void;
+  priority?: "high" | "normal" | "low";
+}) {
   const [currentUri, setCurrentUri] = React.useState(uri);
   const [errored, setErrored] = React.useState(false);
   const [loading, setLoading] = React.useState(true);
@@ -81,14 +102,30 @@ function Thumbnail({ uri, fallbackUri, width, height, onFinalError, priority = "
 
   if (errored) {
     return (
-      <View style={[styles.thumbnailContainer, { width, height, backgroundColor: Colors.bgTertiary, justifyContent: "center", alignItems: "center" }]}>
+      <View
+        style={[
+          styles.thumbnailContainer,
+          {
+            width,
+            height,
+            backgroundColor: Colors.bgTertiary,
+            justifyContent: "center",
+            alignItems: "center",
+          },
+        ]}
+      >
         <Ionicons name="image-outline" size={32} color={Colors.textMuted} />
       </View>
     );
   }
   if (Platform.OS === "web") {
     return (
-      <View style={[styles.thumbnailContainer, { width, height, backgroundColor: Colors.bgTertiary }]}>
+      <View
+        style={[
+          styles.thumbnailContainer,
+          { width, height, backgroundColor: Colors.bgTertiary },
+        ]}
+      >
         {loading && (
           <View style={[styles.loadingOverlay, { width, height }]}>
             <ActivityIndicator size="small" color={Colors.accent} />
@@ -112,7 +149,12 @@ function Thumbnail({ uri, fallbackUri, width, height, onFinalError, priority = "
     );
   }
   return (
-    <View style={[styles.thumbnailContainer, { width, height, backgroundColor: Colors.bgTertiary }]}>
+    <View
+      style={[
+        styles.thumbnailContainer,
+        { width, height, backgroundColor: Colors.bgTertiary },
+      ]}
+    >
       {loading && (
         <View style={[styles.loadingOverlay, { width, height }]}>
           <ActivityIndicator size="small" color={Colors.accent} />
@@ -120,7 +162,10 @@ function Thumbnail({ uri, fallbackUri, width, height, onFinalError, priority = "
       )}
       <Image
         source={{ uri: currentUri }}
-        style={[styles.thumbnailImage, { width, height, opacity: loading ? 0 : 1 }]}
+        style={[
+          styles.thumbnailImage,
+          { width, height, opacity: loading ? 0 : 1 },
+        ]}
         contentFit="cover"
         transition={0}
         cachePolicy="memory-disk"
@@ -132,18 +177,34 @@ function Thumbnail({ uri, fallbackUri, width, height, onFinalError, priority = "
   );
 }
 
-function PostCardInner({ post, index, onPress, badgeText, onBroken, actionState, onActionChange }: PostCardProps) {
+function PostCardInner({
+  post,
+  index,
+  onPress,
+  badgeText,
+  onBroken,
+  actionState,
+  onActionChange,
+}: PostCardProps) {
   const router = useRouter();
   const { isLoggedIn, token } = useAuth();
   const { colors } = useAppTheme();
   const { qualityOption } = useSettings();
-  const { playlists, activePlaylist, setActivePlaylist, addPostToActive, removePostFromActive } = usePlaylist();
+  const {
+    playlists,
+    activePlaylist,
+    setActivePlaylist,
+    addPostToActive,
+    removePostFromActive,
+  } = usePlaylist();
   const { width: screenWidth } = useWindowDimensions();
-  const cardWidth = Math.floor((screenWidth - GAP * (NUM_COLUMNS + 1)) / NUM_COLUMNS);
+  const cardWidth = Math.floor(
+    (screenWidth - GAP * (NUM_COLUMNS + 1)) / NUM_COLUMNS,
+  );
   const cardHeight = Math.floor(cardWidth / FIXED_ASPECT);
-  const thumbUrl = getMediaUrl(post, qualityOption.gridVariant);
-  const thumbFallback = getMediaUrlDirect(post, "thumb");
-  const fullUrl = getMediaUrl(post, "full");
+  const thumbUrl = getSiteMediaUrl(post, qualityOption.gridVariant);
+  const thumbFallback = getSiteMediaUrl(post, "thumb");
+  const fullUrl = getSiteMediaUrl(post, "full");
   const isVideo = post.type === 1;
   const [downloading, setDownloading] = useState(false);
 
@@ -172,14 +233,17 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken, actionState,
 
   const handleLike = useCallback(async () => {
     if (!isLoggedIn) return;
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== "web")
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       if (liked) {
         await api.unlikePost(post.id);
       } else {
         await api.likePost(post.id);
-        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        if (token && post.tags) sendRecSignal(token, post.id, "like", post.tags);
+        if (Platform.OS !== "web")
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (token && post.tags)
+          sendRecSignal(token, post.id, "like", post.tags);
       }
       onActionChange?.(post.id);
     } catch {}
@@ -187,24 +251,29 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken, actionState,
 
   const handleSuperLike = useCallback(async () => {
     if (!isLoggedIn || superLiked) return;
-    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (Platform.OS !== "web")
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
       await api.superLikePost(post.id);
-      if (token && post.tags) sendRecSignal(token, post.id, "super_like", post.tags);
+      if (token && post.tags)
+        sendRecSignal(token, post.id, "super_like", post.tags);
       onActionChange?.(post.id);
     } catch {}
   }, [isLoggedIn, superLiked, post.id, post.tags, token, onActionChange]);
 
   const handleBookmark = useCallback(async () => {
     if (!isLoggedIn) return;
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== "web")
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       if (bookmarked) {
         await api.unbookmarkPost(post.id);
       } else {
         await api.bookmarkPost(post.id);
-        if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        if (token && post.tags) sendRecSignal(token, post.id, "bookmark", post.tags);
+        if (Platform.OS !== "web")
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        if (token && post.tags)
+          sendRecSignal(token, post.id, "bookmark", post.tags);
       }
       onActionChange?.(post.id);
     } catch {}
@@ -223,16 +292,26 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken, actionState,
       const ok = await addPostToActive(post.id);
       if (ok) setAddedToPlaylist(true);
     }
-  }, [post.id, isLoggedIn, activePlaylist, addPostToActive, removePostFromActive, addedToPlaylist]);
+  }, [
+    post.id,
+    isLoggedIn,
+    activePlaylist,
+    addPostToActive,
+    removePostFromActive,
+    addedToPlaylist,
+  ]);
 
-  const pickPlaylist = useCallback(async (pl: any) => {
-    setActivePlaylist(pl);
-    setShowPlaylistPicker(false);
-    try {
-      await api.addToPlaylist(pl.id, post.id);
-      setAddedToPlaylist(true);
-    } catch {}
-  }, [post.id, setActivePlaylist]);
+  const pickPlaylist = useCallback(
+    async (pl: any) => {
+      setActivePlaylist(pl);
+      setShowPlaylistPicker(false);
+      try {
+        await api.addToPlaylist(pl.id, post.id);
+        setAddedToPlaylist(true);
+      } catch {}
+    },
+    [post.id, setActivePlaylist],
+  );
 
   return (
     <Pressable
@@ -248,8 +327,15 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken, actionState,
       }}
       style={({ pressed }) => [
         styles.card,
-        { width: cardWidth, height: cardHeight, backgroundColor: colors.bgCard },
-        { transform: [{ scale: pressed ? 0.97 : 1 }], opacity: pressed ? 0.92 : 1 },
+        {
+          width: cardWidth,
+          height: cardHeight,
+          backgroundColor: colors.bgCard,
+        },
+        {
+          transform: [{ scale: pressed ? 0.97 : 1 }],
+          opacity: pressed ? 0.92 : 1,
+        },
       ]}
     >
       <Thumbnail
@@ -258,11 +344,16 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken, actionState,
         width={cardWidth}
         height={cardHeight}
         priority={index < 6 ? "high" : "normal"}
-        onFinalError={() => { markBroken(post.id); onBroken?.(post.id); }}
+        onFinalError={() => {
+          markBroken(post.id);
+          onBroken?.(post.id);
+        }}
       />
       {badgeText ? (
         <View style={styles.tagBadge}>
-          <Text style={styles.tagBadgeText} numberOfLines={1}>{badgeText}</Text>
+          <Text style={styles.tagBadgeText} numberOfLines={1}>
+            {badgeText}
+          </Text>
         </View>
       ) : null}
       {isVideo && (
@@ -286,20 +377,28 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken, actionState,
       {isLoggedIn && (
         <View style={styles.quickActions}>
           <Pressable
-            style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.7, transform: [{ scale: 0.85 }] }]}
+            style={({ pressed }) => [
+              styles.quickBtn,
+              pressed && { opacity: 0.7, transform: [{ scale: 0.85 }] },
+            ]}
             onPress={handleLike}
             onLongPress={handleSuperLike}
             delayLongPress={400}
             hitSlop={6}
           >
             <Ionicons
-              name={superLiked ? "heart-circle" : liked ? "heart" : "heart-outline"}
+              name={
+                superLiked ? "heart-circle" : liked ? "heart" : "heart-outline"
+              }
               size={18}
               color={superLiked ? "#FFD700" : liked ? "#ff4466" : "#fff"}
             />
           </Pressable>
           <Pressable
-            style={({ pressed }) => [styles.quickBtn, pressed && { opacity: 0.7, transform: [{ scale: 0.85 }] }]}
+            style={({ pressed }) => [
+              styles.quickBtn,
+              pressed && { opacity: 0.7, transform: [{ scale: 0.85 }] },
+            ]}
             onPress={handleBookmark}
             hitSlop={6}
           >
@@ -312,7 +411,9 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken, actionState,
           {playlists.length > 0 && (
             <Pressable style={styles.quickBtn} onPress={handlePlaylistToggle}>
               <Ionicons
-                name={addedToPlaylist ? "checkmark-circle" : "add-circle-outline"}
+                name={
+                  addedToPlaylist ? "checkmark-circle" : "add-circle-outline"
+                }
                 size={18}
                 color={addedToPlaylist ? "#44dd66" : "#fff"}
               />
@@ -338,12 +439,19 @@ function PostCardInner({ post, index, onPress, badgeText, onBroken, actionState,
               onPress={() => pickPlaylist(pl)}
             >
               <Ionicons name="list-outline" size={14} color="#fff" />
-              <Text style={styles.pickerText} numberOfLines={1}>{pl.title}</Text>
+              <Text style={styles.pickerText} numberOfLines={1}>
+                {pl.title}
+              </Text>
             </Pressable>
           ))}
-          <Pressable style={styles.pickerItem} onPress={() => setShowPlaylistPicker(false)}>
+          <Pressable
+            style={styles.pickerItem}
+            onPress={() => setShowPlaylistPicker(false)}
+          >
             <Ionicons name="close" size={14} color={Colors.textMuted} />
-            <Text style={[styles.pickerText, { color: Colors.textMuted }]}>Cancel</Text>
+            <Text style={[styles.pickerText, { color: Colors.textMuted }]}>
+              Cancel
+            </Text>
           </Pressable>
         </View>
       )}
@@ -481,4 +589,3 @@ const styles = StyleSheet.create({
 });
 
 export { GAP, NUM_COLUMNS };
-

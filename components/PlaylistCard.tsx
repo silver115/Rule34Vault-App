@@ -1,10 +1,11 @@
-import React, { memo } from "react";
-import { View, StyleSheet, Pressable, Text } from "react-native";
-import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { Playlist, getMediaUrl } from "../api/rule34vault";
-import { Colors, Radius, Spacing, FontSize } from "../constants/theme";
+import React, { memo } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Playlist } from "../api/rule34vault";
+import { Colors, FontSize, Radius, Spacing } from "../constants/theme";
+import { getSiteMediaUrl } from "../utils/media";
 
 interface PlaylistCardProps {
   playlist: Playlist;
@@ -13,7 +14,7 @@ interface PlaylistCardProps {
 function PlaylistCardInner({ playlist }: PlaylistCardProps) {
   const router = useRouter();
   const thumbUrl = playlist.lastPost
-    ? getMediaUrl(playlist.lastPost, "thumb")
+    ? getSiteMediaUrl(playlist.lastPost, "thumb")
     : null;
 
   return (
@@ -31,7 +32,11 @@ function PlaylistCardInner({ playlist }: PlaylistCardProps) {
           />
         ) : (
           <View style={[styles.thumb, styles.noThumb]}>
-            <Ionicons name="images-outline" size={28} color={Colors.textMuted} />
+            <Ionicons
+              name="images-outline"
+              size={28}
+              color={Colors.textMuted}
+            />
           </View>
         )}
         <View style={styles.countBadge}>

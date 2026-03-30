@@ -24,11 +24,11 @@ import {
     Post,
     PostComment,
     api,
-    getAvatarUrl,
-    getMediaUrl,
+    getAvatarUrl
 } from "../api/rule34vault";
 import { Colors } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
+import { getSiteMediaUrl } from "../utils/media";
 import { sendAttentionSignal, sendRecSignal } from "../utils/recommendations";
 import { ZoomableImage } from "./ZoomableImage";
 
@@ -138,7 +138,7 @@ export function TikTokView({
     }
   }, []);
 
-  const mediaUrl = getMediaUrl(post, "full", true);
+  const mediaUrl = getSiteMediaUrl(post, "full");
   const isVideo = post.type === 1;
   const isTallImage =
     !isVideo && post.width > 0 && post.height / post.width > 2.0;

@@ -10,12 +10,25 @@ import {
     StyleSheet,
     Switch,
     Text,
-    View
+    View,
 } from "react-native";
 import { FontSize, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
-import { PreviewQuality, QUALITY_OPTIONS, ScrollMode, ViewingMode, useSettings } from "../contexts/SettingsContext";
-import { ACCENT_COLORS, AccentColor, THEMES, ThemeName, useAppTheme } from "../contexts/ThemeContext";
+import {
+    PreviewQuality,
+    QUALITY_OPTIONS,
+    ScrollMode,
+    ViewingMode,
+    useSettings,
+} from "../contexts/SettingsContext";
+import { useSite } from "../contexts/SiteContext";
+import {
+    ACCENT_COLORS,
+    AccentColor,
+    THEMES,
+    ThemeName,
+    useAppTheme,
+} from "../contexts/ThemeContext";
 import {
     getNotificationPref,
     registerForPushNotifications,
@@ -30,8 +43,17 @@ const QUALITY_KEYS = Object.keys(QUALITY_OPTIONS) as PreviewQuality[];
 export default function SettingsScreen() {
   const router = useRouter();
   const { user, token: authToken, isLoggedIn, logout } = useAuth();
+  const { activeSite, setActiveSite, isE621 } = useSite();
   const { themeName, colors, setTheme, accentColor, setAccent } = useAppTheme();
-  const { previewQuality, qualityOption, setPreviewQuality, viewingMode, setViewingMode, scrollMode, setScrollMode } = useSettings();
+  const {
+    previewQuality,
+    qualityOption,
+    setPreviewQuality,
+    viewingMode,
+    setViewingMode,
+    scrollMode,
+    setScrollMode,
+  } = useSettings();
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
@@ -42,7 +64,9 @@ export default function SettingsScreen() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    getNotificationPref().then(setPushEnabled).catch(() => {});
+    getNotificationPref()
+      .then(setPushEnabled)
+      .catch(() => {});
   }, []);
 
   async function handleTogglePush(value: boolean) {
@@ -54,7 +78,7 @@ export default function SettingsScreen() {
         if (!pushToken && Platform.OS !== "web") {
           Alert.alert(
             "Permissions Required",
-            "Please enable notifications in your device settings to receive feed updates."
+            "Please enable notifications in your device settings to receive feed updates.",
           );
           return;
         }
@@ -63,7 +87,10 @@ export default function SettingsScreen() {
           const result = await registerWithPushServer(pushToken, authToken);
           if (!result.ok) {
             const detail = result.error ? `\n\n${result.error}` : "";
-            Alert.alert("Error", `Failed to register with notification server. Try again later.${detail}`);
+            Alert.alert(
+              "Error",
+              `Failed to register with notification server. Try again later.${detail}`,
+            );
             return;
           }
         }
@@ -100,32 +127,102 @@ export default function SettingsScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}> 
+    <View style={[styles.container, { backgroundColor: colors.bg }]}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: colors.bgCard, borderBottomColor: colors.border }]}>
+      <View
+        style={[
+          styles.header,
+          { backgroundColor: colors.bgCard, borderBottomColor: colors.border },
+        ]}
+      >
         <Pressable style={styles.backBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={22} color={colors.text} />
         </Pressable>
-        <Text style={[styles.headerTitle, { color: colors.text }]}>Settings</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>
+          Settings
+        </Text>
         <View style={{ width: 36 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
+        {/* Content Source Toggle */}
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+          Content Source
+        </Text>
+        <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
+          <View style={[styles.row, { borderBottomColor: colors.border }]}>
+            <Ionicons
+              name={isE621 ? "paw" : "shield-checkmark"}
+              size={20}
+              color={isE621 ? "#00549f" : colors.accent}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>
+                {isE621 ? "e621.net" : "Rule34Vault"}
+              </Text>
+              <Text style={[styles.rowSub, { color: colors.textMuted }]}>
+                {isE621
+                  ? "Furry-focused booru with e621 account"
+                  : "Default content source"}
+              </Text>
+            </View>
+            <Switch
+              value={isE621}
+              onValueChange={(val) => {
+                const newSite = val ? "e621" : "r34vault";
+                if (isLoggedIn) {
+                  Alert.alert(
+                    "Switch Site",
+                    `Switching to ${val ? "e621" : "Rule34Vault"} will sign you out of your current session. Continue?`,
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Switch",
+                        style: "destructive",
+                        onPress: async () => {
+                          await logout();
+                          setActiveSite(newSite);
+                        },
+                      },
+                    ],
+                  );
+                } else {
+                  setActiveSite(newSite);
+                }
+              }}
+              trackColor={{ false: colors.border, true: "#00549f" }}
+              thumbColor="#fff"
+            />
+          </View>
+        </View>
+
         {/* Appearance Section */}
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Appearance</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+          Appearance
+        </Text>
         <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
           <Pressable
             style={[styles.row, { borderBottomColor: colors.border }]}
             onPress={() => setThemeDropdownOpen(true)}
           >
-            <Ionicons name="color-palette-outline" size={20} color={colors.textSecondary} />
+            <Ionicons
+              name="color-palette-outline"
+              size={20}
+              color={colors.textSecondary}
+            />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: colors.text }]}>Theme</Text>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>
+                Theme
+              </Text>
               <Text style={[styles.rowSub, { color: colors.textMuted }]}>
                 {THEMES[themeName].label} — {THEMES[themeName].description}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={colors.textMuted}
+            />
           </Pressable>
         </View>
 
@@ -140,8 +237,18 @@ export default function SettingsScreen() {
             style={styles.modalOverlay}
             onPress={() => setThemeDropdownOpen(false)}
           >
-            <View style={[styles.modalContent, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Choose Theme</Text>
+            <View
+              style={[
+                styles.modalContent,
+                {
+                  backgroundColor: colors.bgElevated,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Choose Theme
+              </Text>
               {THEME_KEYS.map((key) => {
                 const t = THEMES[key];
                 const isActive = key === themeName;
@@ -151,7 +258,10 @@ export default function SettingsScreen() {
                     style={[
                       styles.themeOption,
                       { borderColor: colors.border },
-                      isActive && { borderColor: colors.accent, backgroundColor: colors.accent + "15" },
+                      isActive && {
+                        borderColor: colors.accent,
+                        backgroundColor: colors.accent + "15",
+                      },
                     ]}
                     onPress={() => {
                       setTheme(key);
@@ -159,17 +269,41 @@ export default function SettingsScreen() {
                     }}
                   >
                     <View style={styles.themePreview}>
-                      <View style={[styles.previewDot, { backgroundColor: t.colors.bg }]} />
-                      <View style={[styles.previewDot, { backgroundColor: t.colors.accent }]} />
-                      <View style={[styles.previewDot, { backgroundColor: t.colors.accentLight }]} />
-                      <View style={[styles.previewDot, { backgroundColor: t.colors.bgCard }]} />
+                      <View
+                        style={[
+                          styles.previewDot,
+                          { backgroundColor: t.colors.bg },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.previewDot,
+                          { backgroundColor: t.colors.accent },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.previewDot,
+                          { backgroundColor: t.colors.accentLight },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          styles.previewDot,
+                          { backgroundColor: t.colors.bgCard },
+                        ]}
+                      />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.themeLabel, { color: colors.text }]}>
                         {t.label}
                         {isActive ? "  ✓" : ""}
                       </Text>
-                      <Text style={[styles.themeSub, { color: colors.textMuted }]}>{t.description}</Text>
+                      <Text
+                        style={[styles.themeSub, { color: colors.textMuted }]}
+                      >
+                        {t.description}
+                      </Text>
                     </View>
                   </Pressable>
                 );
@@ -179,20 +313,30 @@ export default function SettingsScreen() {
         </Modal>
 
         {/* Accent Color Section */}
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Personalization</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+          Personalization
+        </Text>
         <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
           <Pressable
             style={[styles.row, { borderBottomColor: colors.border }]}
             onPress={() => setAccentDropdownOpen(true)}
           >
-            <Ionicons name="color-palette-outline" size={20} color={colors.textSecondary} />
+            <Ionicons
+              name="color-palette-outline"
+              size={20}
+              color={colors.textSecondary}
+            />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: colors.text }]}>Accent Color</Text>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>
+                Accent Color
+              </Text>
               <Text style={[styles.rowSub, { color: colors.textMuted }]}>
                 {ACCENT_COLORS[accentColor].label} — Customize app colors
               </Text>
             </View>
-            <View style={[styles.accentPreview, { backgroundColor: colors.accent }]} />
+            <View
+              style={[styles.accentPreview, { backgroundColor: colors.accent }]}
+            />
           </Pressable>
         </View>
 
@@ -207,8 +351,18 @@ export default function SettingsScreen() {
             style={styles.modalOverlay}
             onPress={() => setAccentDropdownOpen(false)}
           >
-            <View style={[styles.modalContent, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Choose Accent Color</Text>
+            <View
+              style={[
+                styles.modalContent,
+                {
+                  backgroundColor: colors.bgElevated,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Choose Accent Color
+              </Text>
               <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
                 Personalize your app's look
               </Text>
@@ -221,7 +375,10 @@ export default function SettingsScreen() {
                     style={[
                       styles.themeOption,
                       { borderColor: colors.border },
-                      isActive && { borderColor: accent.color, backgroundColor: accent.color + "15" },
+                      isActive && {
+                        borderColor: accent.color,
+                        backgroundColor: accent.color + "15",
+                      },
                     ]}
                     onPress={() => {
                       setAccent(color);
@@ -229,14 +386,21 @@ export default function SettingsScreen() {
                     }}
                   >
                     <View style={styles.accentIconWrap}>
-                      <View style={[styles.accentPreview, { backgroundColor: accent.color }]} />
+                      <View
+                        style={[
+                          styles.accentPreview,
+                          { backgroundColor: accent.color },
+                        ]}
+                      />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.themeLabel, { color: colors.text }]}>
                         {accent.label}
                         {isActive ? "  ✓" : ""}
                       </Text>
-                      <Text style={[styles.themeSub, { color: colors.textMuted }]}>
+                      <Text
+                        style={[styles.themeSub, { color: colors.textMuted }]}
+                      >
                         {accent.color.toUpperCase()}
                       </Text>
                     </View>
@@ -248,20 +412,38 @@ export default function SettingsScreen() {
         </Modal>
 
         {/* Viewing Mode Section */}
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Browsing</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+          Browsing
+        </Text>
         <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
           <Pressable
             style={[styles.row, { borderBottomColor: colors.border }]}
             onPress={() => setViewModeOpen(true)}
           >
-            <Ionicons name={viewingMode === "tiktok" ? "phone-portrait-outline" : "grid-outline"} size={20} color={colors.textSecondary} />
+            <Ionicons
+              name={
+                viewingMode === "tiktok"
+                  ? "phone-portrait-outline"
+                  : "grid-outline"
+              }
+              size={20}
+              color={colors.textSecondary}
+            />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: colors.text }]}>Viewing Mode</Text>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>
+                Viewing Mode
+              </Text>
               <Text style={[styles.rowSub, { color: colors.textMuted }]}>
-                {viewingMode === "grid" ? "Grid — Classic thumbnail grid" : "TikTok — Full-screen swipe player"}
+                {viewingMode === "grid"
+                  ? "Grid — Classic thumbnail grid"
+                  : "TikTok — Full-screen swipe player"}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={colors.textMuted}
+            />
           </Pressable>
         </View>
 
@@ -276,25 +458,40 @@ export default function SettingsScreen() {
             style={styles.modalOverlay}
             onPress={() => setViewModeOpen(false)}
           >
-            <View style={[styles.modalContent, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Viewing Mode</Text>
+            <View
+              style={[
+                styles.modalContent,
+                {
+                  backgroundColor: colors.bgElevated,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Viewing Mode
+              </Text>
               <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
                 Choose how you browse posts
               </Text>
               {(["grid", "tiktok"] as ViewingMode[]).map((mode) => {
                 const isActive = viewingMode === mode;
-                const icon = mode === "grid" ? "grid-outline" : "phone-portrait-outline";
+                const icon =
+                  mode === "grid" ? "grid-outline" : "phone-portrait-outline";
                 const label = mode === "grid" ? "Grid" : "TikTok";
-                const desc = mode === "grid"
-                  ? "Classic thumbnail grid — tap any post to open full-screen TikTok player"
-                  : "Full-screen vertical swipe with modern video player and scrubber";
+                const desc =
+                  mode === "grid"
+                    ? "Classic thumbnail grid — tap any post to open full-screen TikTok player"
+                    : "Full-screen vertical swipe with modern video player and scrubber";
                 return (
                   <Pressable
                     key={mode}
                     style={[
                       styles.themeOption,
                       { borderColor: colors.border },
-                      isActive && { borderColor: colors.accent, backgroundColor: colors.accent + "15" },
+                      isActive && {
+                        borderColor: colors.accent,
+                        backgroundColor: colors.accent + "15",
+                      },
                     ]}
                     onPress={() => {
                       setViewingMode(mode);
@@ -313,7 +510,11 @@ export default function SettingsScreen() {
                         {label}
                         {isActive ? "  ✓" : ""}
                       </Text>
-                      <Text style={[styles.themeSub, { color: colors.textMuted }]}>{desc}</Text>
+                      <Text
+                        style={[styles.themeSub, { color: colors.textMuted }]}
+                      >
+                        {desc}
+                      </Text>
                     </View>
                   </Pressable>
                 );
@@ -328,14 +529,30 @@ export default function SettingsScreen() {
             style={[styles.row, { borderBottomColor: colors.border }]}
             onPress={() => setScrollModeOpen(true)}
           >
-            <Ionicons name={scrollMode === "tiktok" ? "phone-portrait-outline" : "list-outline"} size={20} color={colors.textSecondary} />
+            <Ionicons
+              name={
+                scrollMode === "tiktok"
+                  ? "phone-portrait-outline"
+                  : "list-outline"
+              }
+              size={20}
+              color={colors.textSecondary}
+            />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: colors.text }]}>Scroll Mode</Text>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>
+                Scroll Mode
+              </Text>
               <Text style={[styles.rowSub, { color: colors.textMuted }]}>
-                {scrollMode === "default" ? "Default — Standard scrolling behavior" : "TikTok — Full-screen vertical swipe"}
+                {scrollMode === "default"
+                  ? "Default — Standard scrolling behavior"
+                  : "TikTok — Full-screen vertical swipe"}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={colors.textMuted}
+            />
           </Pressable>
         </View>
 
@@ -350,25 +567,42 @@ export default function SettingsScreen() {
             style={styles.modalOverlay}
             onPress={() => setScrollModeOpen(false)}
           >
-            <View style={[styles.modalContent, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Scroll Mode</Text>
+            <View
+              style={[
+                styles.modalContent,
+                {
+                  backgroundColor: colors.bgElevated,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Scroll Mode
+              </Text>
               <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
                 Choose how you scroll through posts (For You tab only)
               </Text>
               {(["default", "tiktok"] as ScrollMode[]).map((mode) => {
                 const isActive = scrollMode === mode;
-                const icon = mode === "default" ? "list-outline" : "phone-portrait-outline";
+                const icon =
+                  mode === "default"
+                    ? "list-outline"
+                    : "phone-portrait-outline";
                 const label = mode === "default" ? "Default" : "TikTok";
-                const desc = mode === "default"
-                  ? "Standard scrolling with grid and feed views"
-                  : "Full-screen vertical swipe with modern video player";
+                const desc =
+                  mode === "default"
+                    ? "Standard scrolling with grid and feed views"
+                    : "Full-screen vertical swipe with modern video player";
                 return (
                   <Pressable
                     key={mode}
                     style={[
                       styles.themeOption,
                       { borderColor: colors.border },
-                      isActive && { borderColor: colors.accent, backgroundColor: colors.accent + "15" },
+                      isActive && {
+                        borderColor: colors.accent,
+                        backgroundColor: colors.accent + "15",
+                      },
                     ]}
                     onPress={() => {
                       setScrollMode(mode);
@@ -387,7 +621,11 @@ export default function SettingsScreen() {
                         {label}
                         {isActive ? "  ✓" : ""}
                       </Text>
-                      <Text style={[styles.themeSub, { color: colors.textMuted }]}>{desc}</Text>
+                      <Text
+                        style={[styles.themeSub, { color: colors.textMuted }]}
+                      >
+                        {desc}
+                      </Text>
                     </View>
                   </Pressable>
                 );
@@ -397,20 +635,32 @@ export default function SettingsScreen() {
         </Modal>
 
         {/* Data & Quality Section */}
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Data & Quality</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+          Data & Quality
+        </Text>
         <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
           <Pressable
             style={[styles.row, { borderBottomColor: colors.border }]}
             onPress={() => setQualityDropdownOpen(true)}
           >
-            <Ionicons name="image-outline" size={20} color={colors.textSecondary} />
+            <Ionicons
+              name="image-outline"
+              size={20}
+              color={colors.textSecondary}
+            />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: colors.text }]}>Preview Quality</Text>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>
+                Preview Quality
+              </Text>
               <Text style={[styles.rowSub, { color: colors.textMuted }]}>
                 {qualityOption.label} — {qualityOption.description}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={colors.textMuted}
+            />
           </Pressable>
         </View>
 
@@ -425,8 +675,18 @@ export default function SettingsScreen() {
             style={styles.modalOverlay}
             onPress={() => setQualityDropdownOpen(false)}
           >
-            <View style={[styles.modalContent, { backgroundColor: colors.bgElevated, borderColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Preview Quality</Text>
+            <View
+              style={[
+                styles.modalContent,
+                {
+                  backgroundColor: colors.bgElevated,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Preview Quality
+              </Text>
               <Text style={[styles.modalSubtitle, { color: colors.textMuted }]}>
                 Lower quality uses less mobile data
               </Text>
@@ -439,7 +699,10 @@ export default function SettingsScreen() {
                     style={[
                       styles.themeOption,
                       { borderColor: colors.border },
-                      isActive && { borderColor: colors.accent, backgroundColor: colors.accent + "15" },
+                      isActive && {
+                        borderColor: colors.accent,
+                        backgroundColor: colors.accent + "15",
+                      },
                     ]}
                     onPress={() => {
                       setPreviewQuality(key);
@@ -448,7 +711,13 @@ export default function SettingsScreen() {
                   >
                     <View style={styles.qualityIconWrap}>
                       <Ionicons
-                        name={key === "low" ? "cellular-outline" : key === "medium" ? "cellular" : "wifi"}
+                        name={
+                          key === "low"
+                            ? "cellular-outline"
+                            : key === "medium"
+                              ? "cellular"
+                              : "wifi"
+                        }
                         size={20}
                         color={isActive ? colors.accent : colors.textSecondary}
                       />
@@ -458,19 +727,38 @@ export default function SettingsScreen() {
                         {opt.label}
                         {isActive ? "  ✓" : ""}
                       </Text>
-                      <Text style={[styles.themeSub, { color: colors.textMuted }]}>{opt.description}</Text>
+                      <Text
+                        style={[styles.themeSub, { color: colors.textMuted }]}
+                      >
+                        {opt.description}
+                      </Text>
                       {key === "low" && (
-                        <Text style={[styles.qualityDetail, { color: colors.textMuted }]}>
+                        <Text
+                          style={[
+                            styles.qualityDetail,
+                            { color: colors.textMuted },
+                          ]}
+                        >
                           Videos: tap to play • Images: thumbnails only
                         </Text>
                       )}
                       {key === "medium" && (
-                        <Text style={[styles.qualityDetail, { color: colors.textMuted }]}>
+                        <Text
+                          style={[
+                            styles.qualityDetail,
+                            { color: colors.textMuted },
+                          ]}
+                        >
                           Videos: auto-play • Images: full in detail view
                         </Text>
                       )}
                       {key === "high" && (
-                        <Text style={[styles.qualityDetail, { color: colors.textMuted }]}>
+                        <Text
+                          style={[
+                            styles.qualityDetail,
+                            { color: colors.textMuted },
+                          ]}
+                        >
                           Videos: auto-play • Images: full quality everywhere
                         </Text>
                       )}
@@ -483,12 +771,20 @@ export default function SettingsScreen() {
         </Modal>
 
         {/* Notifications Section */}
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Notifications</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+          Notifications
+        </Text>
         <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
           <View style={[styles.row, { borderBottomColor: colors.border }]}>
-            <Ionicons name="notifications-outline" size={20} color={colors.textSecondary} />
+            <Ionicons
+              name="notifications-outline"
+              size={20}
+              color={colors.textSecondary}
+            />
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rowLabel, { color: colors.text }]}>Push Notifications</Text>
+              <Text style={[styles.rowLabel, { color: colors.text }]}>
+                Push Notifications
+              </Text>
               <Text style={[styles.rowSub, { color: colors.textMuted }]}>
                 {pushEnabled
                   ? "You'll be notified of new feed posts"
@@ -499,25 +795,41 @@ export default function SettingsScreen() {
               value={pushEnabled}
               onValueChange={handleTogglePush}
               disabled={pushLoading}
-              trackColor={{ false: colors.bgTertiary, true: colors.accent + "66" }}
+              trackColor={{
+                false: colors.bgTertiary,
+                true: colors.accent + "66",
+              }}
               thumbColor={pushEnabled ? colors.accent : colors.textMuted}
             />
           </View>
         </View>
 
         {/* Account Section */}
-        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>Account</Text>
+        <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+          Account
+        </Text>
         <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
-          <Pressable style={[styles.row, { borderBottomColor: colors.border }]} onPress={handleSignOut}>
+          <Pressable
+            style={[styles.row, { borderBottomColor: colors.border }]}
+            onPress={handleSignOut}
+          >
             <Ionicons name="log-out-outline" size={20} color={colors.danger} />
-            <Text style={[styles.rowLabel, { color: colors.danger }]}>Sign Out</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+            <Text style={[styles.rowLabel, { color: colors.danger }]}>
+              Sign Out
+            </Text>
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={colors.textMuted}
+            />
           </Pressable>
         </View>
 
         {/* App info */}
         <View style={styles.footerInfo}>
-          <Text style={[styles.footerText, { color: colors.textMuted }]}>Rule34Vault App v1.0.0</Text>
+          <Text style={[styles.footerText, { color: colors.textMuted }]}>
+            Rule34Vault App v1.0.0
+          </Text>
         </View>
       </ScrollView>
     </View>

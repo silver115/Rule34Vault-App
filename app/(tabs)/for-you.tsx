@@ -10,37 +10,41 @@ import {
     Text,
     View,
 } from "react-native";
+import e621Api from "../../api/e621";
 import api, { Post } from "../../api/rule34vault";
 import { PostGrid } from "../../components/PostGrid";
 import { TikTokFeed } from "../../components/TikTokFeed";
 import { FontSize, Radius, Spacing } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useSite } from "../../contexts/SiteContext";
 import { useAppTheme } from "../../contexts/ThemeContext";
 import {
     fetchRecommendations,
     hasRecServer,
-    resetRecProfile
+    resetRecProfile,
 } from "../../utils/recommendations";
 
 const PAGE_SIZE = 30;
 
 export default function ForYouScreen() {
   const { isLoggedIn, user, token } = useAuth();
+  const { isE621 } = useSite();
   const { colors } = useAppTheme();
   const { scrollMode } = useSettings();
+  const activeApi = isE621 ? e621Api : api;
   const router = useRouter();
   const navigation = useNavigation();
   const isFocused = useIsFocused();
 
-  const usingServer = hasRecServer();
+  const usingServer = hasRecServer() && !isE621; // e621 mode uses client-side algorithm
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [topTags, setTopTags] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
 
-  const cursorRef  = useRef<string | null>(null);
+  const cursorRef = useRef<string | null>(null);
   const seenIdsRef = useRef<Set<number>>(new Set());
   const loadingRef = useRef(false);
   const hasMoreRef = useRef(true);
@@ -66,11 +70,15 @@ export default function ForYouScreen() {
                     load(true);
                   },
                 },
-              ]
+              ],
             );
           }}
         >
-          <Ionicons name="refresh-circle-outline" size={24} color={colors.textSecondary} />
+          <Ionicons
+            name="refresh-circle-outline"
+            size={24}
+            color={colors.textSecondary}
+          />
         </Pressable>
       ),
     });
@@ -102,23 +110,25 @@ export default function ForYouScreen() {
           const serverResult = await fetchRecommendations(token, PAGE_SIZE);
           if (serverResult) {
             items = serverResult.posts;
-            tags  = serverResult.topTags;
+            tags = serverResult.topTags;
           }
         } else {
-          // No rec server — use client-side algorithm
-          const result = await api.searchForYouPosts(
+          // No rec server or e621 mode — use client-side algorithm
+          const result = await activeApi.searchForYouPosts(
             user.id,
             PAGE_SIZE,
             cursorRef.current,
-            seenIdsRef.current
+            seenIdsRef.current,
           );
           items = result.items;
-          tags  = result.topTags;
+          tags = result.topTags;
         }
 
         items.forEach((p) => seenIdsRef.current.add(p.id));
         // More lenient stopping conditions - only stop if we get very few items
-        hasMoreRef.current = usingServer ? items.length > 0 : items.length >= Math.floor(PAGE_SIZE * 0.3);
+        hasMoreRef.current = usingServer
+          ? items.length > 0
+          : items.length >= Math.floor(PAGE_SIZE * 0.3);
 
         if (refresh) {
           setPosts(items);
@@ -136,7 +146,7 @@ export default function ForYouScreen() {
         loadingRef.current = false;
       }
     },
-    [isLoggedIn, user, token, usingServer]
+    [isLoggedIn, user, token, usingServer],
   );
 
   useEffect(() => {
@@ -148,10 +158,15 @@ export default function ForYouScreen() {
   if (!isLoggedIn) {
     return (
       <View style={[styles.gate, { backgroundColor: colors.bg }]}>
-        <Ionicons name="heart-circle-outline" size={64} color={colors.textMuted} />
+        <Ionicons
+          name="heart-circle-outline"
+          size={64}
+          color={colors.textMuted}
+        />
         <Text style={[styles.gateTitle, { color: colors.text }]}>For You</Text>
         <Text style={[styles.gateDesc, { color: colors.textSecondary }]}>
-          Sign in to get personalised recommendations based on your likes and bookmarks.
+          Sign in to get personalised recommendations based on your likes and
+          bookmarks.
         </Text>
         <Pressable
           style={[styles.loginBtn, { backgroundColor: colors.accent }]}
@@ -181,18 +196,35 @@ export default function ForYouScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.tagsRow}
             >
-              <Text style={[styles.basedOn, { color: colors.textMuted }]}>Based on:</Text>
+              <Text style={[styles.basedOn, { color: colors.textMuted }]}>
+                Based on:
+              </Text>
               {topTags.map((tag) => (
-                <View key={tag} style={[styles.tagPill, { backgroundColor: colors.bgTertiary }]}>
-                  <Text style={[styles.tagPillText, { color: colors.accent }]}>{tag}</Text>
+                <View
+                  key={tag}
+                  style={[
+                    styles.tagPill,
+                    { backgroundColor: colors.bgTertiary },
+                  ]}
+                >
+                  <Text style={[styles.tagPillText, { color: colors.accent }]}>
+                    {tag}
+                  </Text>
                 </View>
               ))}
             </ScrollView>
           )}
           {usingServer && (
-            <View style={[styles.serverBadge, { backgroundColor: colors.bgTertiary }]}>
+            <View
+              style={[
+                styles.serverBadge,
+                { backgroundColor: colors.bgTertiary },
+              ]}
+            >
               <Ionicons name="server-outline" size={11} color={colors.accent} />
-              <Text style={[styles.serverBadgeText, { color: colors.accent }]}>Server algorithm active</Text>
+              <Text style={[styles.serverBadgeText, { color: colors.accent }]}>
+                Server algorithm active
+              </Text>
             </View>
           )}
           <PostGrid
@@ -205,9 +237,17 @@ export default function ForYouScreen() {
             ListEmptyComponent={
               !isLoading ? (
                 <View style={styles.emptyState}>
-                  <Ionicons name="sparkles-outline" size={56} color={colors.textMuted} />
-                  <Text style={[styles.emptyTitle, { color: colors.text }]}>Nothing here yet</Text>
-                  <Text style={[styles.gateDesc, { color: colors.textSecondary }]}>
+                  <Ionicons
+                    name="sparkles-outline"
+                    size={56}
+                    color={colors.textMuted}
+                  />
+                  <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                    Nothing here yet
+                  </Text>
+                  <Text
+                    style={[styles.gateDesc, { color: colors.textSecondary }]}
+                  >
                     Like or bookmark posts to train your personalised feed
                   </Text>
                 </View>

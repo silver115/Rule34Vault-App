@@ -10,15 +10,22 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    View
+    View,
 } from "react-native";
 import api, { getAvatarUrl, getBannerUrl, Tag } from "../../api/rule34vault";
 import { Colors, FontSize, Radius, Spacing } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePlaylist } from "../../contexts/PlaylistContext";
+import { useSite } from "../../contexts/SiteContext";
 import { useAppTheme } from "../../contexts/ThemeContext";
 
-function WebImg({ uri, style }: { uri: string; style: Record<string, unknown> }) {
+function WebImg({
+  uri,
+  style,
+}: {
+  uri: string;
+  style: Record<string, unknown>;
+}) {
   const [err, setErr] = useState(false);
   if (err) return null;
   if (Platform.OS === "web") {
@@ -37,9 +44,14 @@ function WebImg({ uri, style }: { uri: string; style: Record<string, unknown> })
 export default function ProfileScreen() {
   const router = useRouter();
   const { user, isLoggedIn, logout } = useAuth();
+  const { isE621 } = useSite();
   const { colors } = useAppTheme();
-  const { playlists, activePlaylist, setActivePlaylist, refreshPlaylists } = usePlaylist();
-  const [blacklist, setBlacklist] = useState<{ tags: Tag[]; isActive: boolean } | null>(null);
+  const { playlists, activePlaylist, setActivePlaylist, refreshPlaylists } =
+    usePlaylist();
+  const [blacklist, setBlacklist] = useState<{
+    tags: Tag[];
+    isActive: boolean;
+  } | null>(null);
   const [showBlacklist, setShowBlacklist] = useState(false);
   const [showPlaylistPicker, setShowPlaylistPicker] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -63,7 +75,7 @@ export default function ProfileScreen() {
   useFocusEffect(
     useCallback(() => {
       loadProfileData();
-    }, [loadProfileData])
+    }, [loadProfileData]),
   );
 
   const handleRefresh = useCallback(async () => {
@@ -76,12 +88,21 @@ export default function ProfileScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
         <View style={styles.center}>
-          <Ionicons name="person-circle-outline" size={80} color={colors.textMuted} />
-          <Text style={[styles.notLoggedTitle, { color: colors.text }]}>Not signed in</Text>
+          <Ionicons
+            name="person-circle-outline"
+            size={80}
+            color={colors.textMuted}
+          />
+          <Text style={[styles.notLoggedTitle, { color: colors.text }]}>
+            Not signed in
+          </Text>
           <Text style={[styles.notLoggedSub, { color: colors.textSecondary }]}>
             Sign in to like, bookmark, and manage playlists
           </Text>
-          <Pressable style={[styles.loginBtn, { backgroundColor: colors.accent }]} onPress={() => router.push("/login")}>
+          <Pressable
+            style={[styles.loginBtn, { backgroundColor: colors.accent }]}
+            onPress={() => router.push("/login")}
+          >
             <Ionicons name="log-in-outline" size={20} color="#fff" />
             <Text style={styles.loginBtnText}>Sign In</Text>
           </Pressable>
@@ -89,8 +110,16 @@ export default function ProfileScreen() {
             style={[styles.settingsBtn, { borderColor: colors.border }]}
             onPress={() => router.push("/settings")}
           >
-            <Ionicons name="settings-outline" size={16} color={colors.textSecondary} />
-            <Text style={[styles.settingsBtnText, { color: colors.textSecondary }]}>Settings</Text>
+            <Ionicons
+              name="settings-outline"
+              size={16}
+              color={colors.textSecondary}
+            />
+            <Text
+              style={[styles.settingsBtnText, { color: colors.textSecondary }]}
+            >
+              Settings
+            </Text>
           </Pressable>
         </View>
       </View>
@@ -98,7 +127,11 @@ export default function ProfileScreen() {
   }
 
   const stats = user.data;
-  const avatarUrl = getAvatarUrl(user.id, user.avatarModifyDate ?? undefined, 256);
+  const avatarUrl = getAvatarUrl(
+    user.id,
+    user.avatarModifyDate ?? undefined,
+    256,
+  );
   const bannerUrl = getBannerUrl(user.id, stats?.profileImageDate ?? undefined);
 
   return (
@@ -121,71 +154,191 @@ export default function ProfileScreen() {
         {bannerUrl ? (
           <WebImg
             uri={bannerUrl}
-            style={{ width: "100%", height: 160, objectFit: "cover", display: "block", backgroundColor: colors.bgTertiary }}
+            style={{
+              width: "100%",
+              height: 160,
+              objectFit: "cover",
+              display: "block",
+              backgroundColor: colors.bgTertiary,
+            }}
           />
         ) : (
-          <View style={{ width: "100%", height: 160, backgroundColor: colors.bgTertiary }} />
+          <View
+            style={{
+              width: "100%",
+              height: 160,
+              backgroundColor: colors.bgTertiary,
+            }}
+          />
         )}
         <View style={styles.bannerGradient} />
       </View>
 
       {/* Profile header */}
       <View style={styles.profileHeader}>
-        <View style={[styles.avatarWrap, { backgroundColor: colors.bgTertiary, borderColor: colors.bg }]}>
+        <View
+          style={[
+            styles.avatarWrap,
+            { backgroundColor: colors.bgTertiary, borderColor: colors.bg },
+          ]}
+        >
           <WebImg
             uri={avatarUrl}
-            style={{ width: 88, height: 88, borderRadius: 44, objectFit: "cover", display: "block" }}
+            style={{
+              width: 88,
+              height: 88,
+              borderRadius: 44,
+              objectFit: "cover",
+              display: "block",
+            }}
           />
         </View>
-        <Text style={[styles.displayName, { color: colors.text }]}>{user.displayName ?? "User"}</Text>
-        <Text style={[styles.username, { color: colors.textSecondary }]}>@{user.userName ?? "unknown"}</Text>
+        <Text style={[styles.displayName, { color: colors.text }]}>
+          {user.displayName ?? "User"}
+        </Text>
+        <Text style={[styles.username, { color: colors.textSecondary }]}>
+          @{user.userName ?? "unknown"}
+        </Text>
         {stats?.description ? (
-          <Text style={[styles.bio, { color: colors.textSecondary }]}>{stats.description}</Text>
+          <Text style={[styles.bio, { color: colors.textSecondary }]}>
+            {stats.description}
+          </Text>
         ) : null}
         <Text style={[styles.joined, { color: colors.textMuted }]}>
-          Joined {user.created ? new Date(user.created).toLocaleDateString() : "N/A"}
+          Joined{" "}
+          {user.created ? new Date(user.created).toLocaleDateString() : "N/A"}
         </Text>
       </View>
 
       {/* Stats */}
-      <View style={[styles.statsRow, { backgroundColor: colors.bgCard }]}>
-        <StatItem icon="heart" value={stats?.likes ?? 0} label="Likes" onPress={() => router.push({ pathname: "/user-posts", params: { type: "liked" } })} />
-        <StatItem icon="bookmark" value={stats?.bookmarks ?? 0} label="Bookmarks" onPress={() => router.push({ pathname: "/user-posts", params: { type: "bookmarked" } })} />
-        <StatItem icon="flame" value={stats?.superLikes ?? 0} label="Super" onPress={() => router.push({ pathname: "/user-posts", params: { type: "super-liked" } })} />
-        <StatItem icon="list" value={stats?.playlists ?? 0} label="Playlists" onPress={() => router.push({ pathname: "/user-playlists" })} />
-      </View>
+      {isE621 ? (
+        <View style={[styles.statsRow, { backgroundColor: colors.bgCard }]}>
+          <StatItem
+            icon="heart"
+            value={stats?.likes ?? 0}
+            label="Favorites"
+            onPress={() =>
+              router.push({
+                pathname: "/user-posts",
+                params: { type: "liked" },
+              })
+            }
+          />
+          <StatItem
+            icon="cloud-upload"
+            value={stats?.postsUploaded ?? 0}
+            label="Uploads"
+          />
+        </View>
+      ) : (
+        <>
+          <View style={[styles.statsRow, { backgroundColor: colors.bgCard }]}>
+            <StatItem
+              icon="heart"
+              value={stats?.likes ?? 0}
+              label="Likes"
+              onPress={() =>
+                router.push({
+                  pathname: "/user-posts",
+                  params: { type: "liked" },
+                })
+              }
+            />
+            <StatItem
+              icon="bookmark"
+              value={stats?.bookmarks ?? 0}
+              label="Bookmarks"
+              onPress={() =>
+                router.push({
+                  pathname: "/user-posts",
+                  params: { type: "bookmarked" },
+                })
+              }
+            />
+            <StatItem
+              icon="flame"
+              value={stats?.superLikes ?? 0}
+              label="Super"
+              onPress={() =>
+                router.push({
+                  pathname: "/user-posts",
+                  params: { type: "super-liked" },
+                })
+              }
+            />
+            <StatItem
+              icon="list"
+              value={stats?.playlists ?? 0}
+              label="Playlists"
+              onPress={() => router.push({ pathname: "/user-playlists" })}
+            />
+          </View>
 
-      <View style={[styles.statsRow, { backgroundColor: colors.bgCard }]}>
-        <StatItem icon="people" value={stats?.followers ?? 0} label="Followers" />
-        <StatItem icon="person-add" value={stats?.following ?? 0} label="Following" />
-        <StatItem icon="albums" value={stats?.followingPlaylists ?? 0} label="Followed PL" onPress={() => router.push({ pathname: "/followed-playlists" })} />
-      </View>
+          <View style={[styles.statsRow, { backgroundColor: colors.bgCard }]}>
+            <StatItem
+              icon="people"
+              value={stats?.followers ?? 0}
+              label="Followers"
+            />
+            <StatItem
+              icon="person-add"
+              value={stats?.following ?? 0}
+              label="Following"
+            />
+            <StatItem
+              icon="albums"
+              value={stats?.followingPlaylists ?? 0}
+              label="Followed PL"
+              onPress={() => router.push({ pathname: "/followed-playlists" })}
+            />
+          </View>
+        </>
+      )}
 
-      {/* Active Playlist */}
-      <View style={[styles.section, { backgroundColor: colors.bgCard }]}>
-        <MenuItem
-          icon="musical-notes-outline"
-          label="Active Playlist"
-          subtitle={activePlaylist ? activePlaylist.title : "None selected — tap to choose"}
-          onPress={() => setShowPlaylistPicker(!showPlaylistPicker)}
-        />
-      </View>
+      {/* Active Playlist — R34V only */}
+      {!isE621 && (
+        <View style={[styles.section, { backgroundColor: colors.bgCard }]}>
+          <MenuItem
+            icon="musical-notes-outline"
+            label="Active Playlist"
+            subtitle={
+              activePlaylist
+                ? activePlaylist.title
+                : "None selected — tap to choose"
+            }
+            onPress={() => setShowPlaylistPicker(!showPlaylistPicker)}
+          />
+        </View>
+      )}
 
-      {showPlaylistPicker && (
-        <View style={[styles.blacklistPanel, { backgroundColor: colors.bgCard }]}>
-          <Text style={[styles.blacklistTitle, { color: colors.textSecondary }]}>
+      {!isE621 && showPlaylistPicker && (
+        <View
+          style={[styles.blacklistPanel, { backgroundColor: colors.bgCard }]}
+        >
+          <Text
+            style={[styles.blacklistTitle, { color: colors.textSecondary }]}
+          >
             Your Playlists ({playlists.length})
           </Text>
           {playlists.length === 0 ? (
-            <Text style={[styles.blacklistEmpty, { color: colors.textMuted }]}>No playlists found. Create one on rule34vault.com</Text>
+            <Text style={[styles.blacklistEmpty, { color: colors.textMuted }]}>
+              No playlists found. Create one on rule34vault.com
+            </Text>
           ) : (
             <View style={{ gap: 4 }}>
               {activePlaylist && (
                 <Pressable
                   style={[styles.playlistItem, styles.playlistItemActive]}
-                  onPress={() => { setActivePlaylist(null); setShowPlaylistPicker(false); }}
+                  onPress={() => {
+                    setActivePlaylist(null);
+                    setShowPlaylistPicker(false);
+                  }}
                 >
-                  <Ionicons name="close-circle" size={16} color={Colors.textMuted} />
+                  <Ionicons
+                    name="close-circle"
+                    size={16}
+                    color={Colors.textMuted}
+                  />
                   <Text style={styles.playlistItemText}>Clear selection</Text>
                 </Pressable>
               )}
@@ -194,8 +347,14 @@ export default function ProfileScreen() {
                 return (
                   <Pressable
                     key={pl.id}
-                    style={[styles.playlistItem, isActive && styles.playlistItemActive]}
-                    onPress={() => { setActivePlaylist(pl); setShowPlaylistPicker(false); }}
+                    style={[
+                      styles.playlistItem,
+                      isActive && styles.playlistItemActive,
+                    ]}
+                    onPress={() => {
+                      setActivePlaylist(pl);
+                      setShowPlaylistPicker(false);
+                    }}
                   >
                     <Ionicons
                       name={isActive ? "checkmark-circle" : "list-outline"}
@@ -203,7 +362,12 @@ export default function ProfileScreen() {
                       color={isActive ? Colors.accent : Colors.textSecondary}
                     />
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.playlistItemText, isActive && { color: Colors.accent }]}>
+                      <Text
+                        style={[
+                          styles.playlistItemText,
+                          isActive && { color: Colors.accent },
+                        ]}
+                      >
                         {pl.title}
                       </Text>
                       <Text style={styles.playlistItemSub}>
@@ -229,12 +393,18 @@ export default function ProfileScreen() {
         <MenuItem
           icon="globe-outline"
           label="View on Website"
-          onPress={() => Linking.openURL(`https://rule34vault.com/u/${user.userName}`)}
+          onPress={() =>
+            Linking.openURL(`https://rule34vault.com/u/${user.userName}`)
+          }
         />
         <MenuItem
           icon="eye-off-outline"
           label="Tag Blacklist"
-          subtitle={blacklist ? `${blacklist.tags.length} tags · ${blacklist.isActive ? "Active" : "Inactive"}` : undefined}
+          subtitle={
+            blacklist
+              ? `${blacklist.tags.length} tags · ${blacklist.isActive ? "Active" : "Inactive"}`
+              : undefined
+          }
           onPress={() => setShowBlacklist(!showBlacklist)}
         />
         <MenuItem
@@ -247,12 +417,18 @@ export default function ProfileScreen() {
 
       {/* Blacklist panel */}
       {showBlacklist && blacklist && (
-        <View style={[styles.blacklistPanel, { backgroundColor: colors.bgCard }]}>
-          <Text style={[styles.blacklistTitle, { color: colors.textSecondary }]}>
+        <View
+          style={[styles.blacklistPanel, { backgroundColor: colors.bgCard }]}
+        >
+          <Text
+            style={[styles.blacklistTitle, { color: colors.textSecondary }]}
+          >
             Blacklisted Tags ({blacklist.tags.length})
           </Text>
           {blacklist.tags.length === 0 ? (
-            <Text style={[styles.blacklistEmpty, { color: colors.textMuted }]}>No blacklisted tags</Text>
+            <Text style={[styles.blacklistEmpty, { color: colors.textMuted }]}>
+              No blacklisted tags
+            </Text>
           ) : (
             <View style={styles.blacklistTags}>
               {blacklist.tags.map((tag) => (
@@ -287,7 +463,9 @@ function StatItem({
     <Wrapper style={styles.statItem} onPress={onPress}>
       <Ionicons name={icon} size={16} color={colors.accent} />
       <Text style={[styles.statValue, { color: colors.text }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: colors.textMuted }]}>{label}</Text>
+      <Text style={[styles.statLabel, { color: colors.textMuted }]}>
+        {label}
+      </Text>
     </Wrapper>
   );
 }
@@ -307,18 +485,29 @@ function MenuItem({
 }) {
   const { colors } = useAppTheme();
   return (
-    <Pressable style={[styles.menuItem, { borderBottomColor: colors.border }]} onPress={onPress}>
+    <Pressable
+      style={[styles.menuItem, { borderBottomColor: colors.border }]}
+      onPress={onPress}
+    >
       <Ionicons
         name={icon}
         size={20}
         color={danger ? colors.danger : colors.textSecondary}
       />
       <View style={{ flex: 1 }}>
-        <Text style={[styles.menuLabel, { color: colors.text }, danger && { color: colors.danger }]}>
+        <Text
+          style={[
+            styles.menuLabel,
+            { color: colors.text },
+            danger && { color: colors.danger },
+          ]}
+        >
           {label}
         </Text>
         {subtitle ? (
-          <Text style={[styles.menuSub, { color: colors.textMuted }]}>{subtitle}</Text>
+          <Text style={[styles.menuSub, { color: colors.textMuted }]}>
+            {subtitle}
+          </Text>
         ) : null}
       </View>
       <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />

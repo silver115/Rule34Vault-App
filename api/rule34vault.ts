@@ -8,8 +8,12 @@ const CDN_URL = "https://r34xyz.b-cdn.net";
 const BASE_URL = Platform.OS === "web" ? PROXY_URL : DIRECT_URL;
 const API_URL = `${BASE_URL}/api/v2`;
 
-function getBaseUrl(): string { return BASE_URL; }
-function getApiUrl(): string { return API_URL; }
+function getBaseUrl(): string {
+  return BASE_URL;
+}
+function getApiUrl(): string {
+  return API_URL;
+}
 
 export const POST_TYPE: Record<number, string> = { 0: "image", 1: "video" };
 export const TAG_TYPE: Record<number, string> = {
@@ -145,7 +149,7 @@ export interface AuthResponse {
 export function getMediaUrl(
   post: Pick<Post, "id" | "type">,
   variant: "full" | "thumb" = "full",
-  useCdn = true
+  useCdn = true,
 ): string {
   const base = useCdn ? CDN_URL : getBaseUrl();
   const bucket = Math.floor(post.id / 1000);
@@ -156,7 +160,7 @@ export function getMediaUrl(
 
 export function getMediaUrlDirect(
   post: Pick<Post, "id" | "type">,
-  variant: "full" | "thumb" = "full"
+  variant: "full" | "thumb" = "full",
 ): string {
   const base = "https://rule34vault.com";
   const bucket = Math.floor(post.id / 1000);
@@ -165,13 +169,20 @@ export function getMediaUrlDirect(
   return post.type === 1 ? `${prefix}.mp4` : `${prefix}.jpg`;
 }
 
-export function getAvatarUrl(userId: number, modifyDate?: string, size = 128): string {
+export function getAvatarUrl(
+  userId: number,
+  modifyDate?: string,
+  size = 128,
+): string {
   const base = "https://rule34vault.com";
   const v = modifyDate ? `?v=${new Date(modifyDate).getTime()}` : "";
   return `${base}/users/${userId}/avatar-${size}.jpg${v}`;
 }
 
-export function getBannerUrl(userId: number, profileImageDate?: string): string | null {
+export function getBannerUrl(
+  userId: number,
+  profileImageDate?: string,
+): string | null {
   if (!profileImageDate) return null;
   const base = "https://rule34vault.com";
   return `${base}/users/${userId}/bg-600.jpg?v=${new Date(profileImageDate).getTime()}`;
@@ -267,17 +278,23 @@ class Rule34VaultAPI {
   }
 
   async isFollowingPlaylist(playlistId: number): Promise<boolean> {
-    return this.post<boolean>("/user-relation/playlist-follow/exists", playlistId);
+    return this.post<boolean>(
+      "/user-relation/playlist-follow/exists",
+      playlistId,
+    );
   }
 
   async getFollowedPlaylists(
     userId: number,
     take = 50,
-    cursor?: string | null
+    cursor?: string | null,
   ): Promise<PaginatedResponse<Playlist>> {
     const body: Record<string, unknown> = { take };
     if (cursor) body.cursor = cursor;
-    return this.post<PaginatedResponse<Playlist>>(`/playlist/search/subscribed/${userId}`, body);
+    return this.post<PaginatedResponse<Playlist>>(
+      `/playlist/search/subscribed/${userId}`,
+      body,
+    );
   }
 
   // ── Posts ─────────────────────────────────────────────
@@ -303,9 +320,12 @@ class Rule34VaultAPI {
         const fetched = await Promise.all(
           chunk.map((id) =>
             this.get<Post>(`/post/${id}`)
-              .then((p) => { cacheSet(id, p); return p; })
-              .catch(() => null)
-          )
+              .then((p) => {
+                cacheSet(id, p);
+                return p;
+              })
+              .catch(() => null),
+          ),
         );
         results.push(...fetched.filter((p): p is Post => p !== null));
       }
@@ -316,7 +336,7 @@ class Rule34VaultAPI {
   async searchPosts(
     take = 30,
     cursor?: string | null,
-    filters?: SearchFilters
+    filters?: SearchFilters,
   ): Promise<PaginatedResponse<Post>> {
     const body: Record<string, unknown> = { take };
     if (cursor) body.cursor = cursor;
@@ -330,24 +350,27 @@ class Rule34VaultAPI {
   async searchHotPosts(
     userId: number,
     take = 30,
-    cursor?: string | null
+    cursor?: string | null,
   ): Promise<PaginatedResponse<Post>> {
     const body: Record<string, unknown> = { take };
     if (cursor) body.cursor = cursor;
-    return this.post<PaginatedResponse<Post>>(`/post/search/hot/${userId}`, body);
+    return this.post<PaginatedResponse<Post>>(
+      `/post/search/hot/${userId}`,
+      body,
+    );
   }
 
   async searchPostsByTag(
     tagName: string,
     take = 30,
     cursor?: string | null,
-    filters?: SearchFilters
+    filters?: SearchFilters,
   ): Promise<PaginatedResponse<Post>> {
     const tags = [tagName, ...(filters?.includeTags ?? [])];
     const body: Record<string, unknown> = { take, includeTags: tags };
     if (cursor) body.cursor = cursor;
     if (filters?.type != null) body.type = filters.type;
-    
+
     // Handle time-based filtering
     if (filters?.postedFromDays != null && filters.postedFromDays > 0) {
       body.postedFromDays = filters.postedFromDays;
@@ -358,51 +381,60 @@ class Rule34VaultAPI {
       body.sortBy = 1;
     }
     // Default (-1) - no sortBy parameter for normal layout like main page
-    
+
     return this.post<PaginatedResponse<Post>>("/post/search/root", body);
   }
 
   async searchPostsByPlaylist(
     playlistId: number,
     take = 30,
-    cursor?: string | null
+    cursor?: string | null,
   ): Promise<PaginatedResponse<Post>> {
     const body: Record<string, unknown> = { take };
     if (cursor) body.cursor = cursor;
     return this.post<PaginatedResponse<Post>>(
       `/post/search/playlist/${playlistId}`,
-      body
+      body,
     );
   }
 
   async searchLikedPosts(
     userId: number,
     take = 30,
-    cursor?: string | null
+    cursor?: string | null,
   ): Promise<PaginatedResponse<Post>> {
     const body: Record<string, unknown> = { take };
     if (cursor) body.cursor = cursor;
-    return this.post<PaginatedResponse<Post>>(`/post/search/liked/${userId}`, body);
+    return this.post<PaginatedResponse<Post>>(
+      `/post/search/liked/${userId}`,
+      body,
+    );
   }
 
   async searchBookmarkedPosts(
     userId: number,
     take = 30,
-    cursor?: string | null
+    cursor?: string | null,
   ): Promise<PaginatedResponse<Post>> {
     const body: Record<string, unknown> = { take };
     if (cursor) body.cursor = cursor;
-    return this.post<PaginatedResponse<Post>>(`/post/search/bookmarked/${userId}`, body);
+    return this.post<PaginatedResponse<Post>>(
+      `/post/search/bookmarked/${userId}`,
+      body,
+    );
   }
 
   async searchSuperLikedPosts(
     userId: number,
     take = 30,
-    cursor?: string | null
+    cursor?: string | null,
   ): Promise<PaginatedResponse<Post>> {
     const body: Record<string, unknown> = { take };
     if (cursor) body.cursor = cursor;
-    return this.post<PaginatedResponse<Post>>(`/post/search/super-liked/${userId}`, body);
+    return this.post<PaginatedResponse<Post>>(
+      `/post/search/super-liked/${userId}`,
+      body,
+    );
   }
 
   // ── Post Actions ──────────────────────────────────────
@@ -410,8 +442,12 @@ class Rule34VaultAPI {
     return this.post<PostActionState>("/post/action/state", { postId });
   }
 
-  async getPostActionStates(postIds: number[]): Promise<Record<number, PostActionState>> {
-    return this.post<Record<number, PostActionState>>("/post/action/states", { postIds });
+  async getPostActionStates(
+    postIds: number[],
+  ): Promise<Record<number, PostActionState>> {
+    return this.post<Record<number, PostActionState>>("/post/action/states", {
+      postIds,
+    });
   }
 
   async likePost(postId: number): Promise<void> {
@@ -441,7 +477,7 @@ class Rule34VaultAPI {
 
   async searchPlaylists(
     take = 20,
-    cursor?: string | null
+    cursor?: string | null,
   ): Promise<PaginatedResponse<Playlist>> {
     const body: Record<string, unknown> = { take };
     if (cursor) body.cursor = cursor;
@@ -452,19 +488,26 @@ class Rule34VaultAPI {
     if (!this.user) throw new Error("Not logged in");
     return this.post<PaginatedResponse<Playlist>>(
       `/playlist/search/user/${this.user.id}`,
-      { take }
+      { take },
     );
   }
 
-  async getUserPlaylists(userId: number, take = 50): Promise<PaginatedResponse<Playlist>> {
+  async getUserPlaylists(
+    userId: number,
+    take = 50,
+  ): Promise<PaginatedResponse<Playlist>> {
     return this.post<PaginatedResponse<Playlist>>(
       `/playlist/search/user/${userId}`,
-      { take }
+      { take },
     );
   }
 
   async addToPlaylist(playlistId: number, postId: number): Promise<void> {
-    await this.post("/playlist/add-item", { playlistId, postId, rewrite: true });
+    await this.post("/playlist/add-item", {
+      playlistId,
+      postId,
+      rewrite: true,
+    });
   }
 
   async removeFromPlaylist(playlistId: number, postId: number): Promise<void> {
@@ -489,9 +532,12 @@ class Rule34VaultAPI {
     userId: number,
     take = 30,
     cursor?: string | null,
-    excludeIds?: Set<number>
+    excludeIds?: Set<number>,
   ): Promise<{ items: Post[]; topTags: string[] }> {
-    const fallback = async (): Promise<{ items: Post[]; topTags: string[] }> => {
+    const fallback = async (): Promise<{
+      items: Post[];
+      topTags: string[];
+    }> => {
       // Try multiple search strategies for more variety
       const strategies = [
         // Strategy 1: Recent posts
@@ -506,7 +552,7 @@ class Rule34VaultAPI {
         try {
           const data = await strategy();
           // Filter out already seen posts
-          const fresh = data.items.filter(p => !excludeIds?.has(p.id));
+          const fresh = data.items.filter((p) => !excludeIds?.has(p.id));
           if (fresh.length > 0) {
             fyShuffleWindow(fresh, 5);
             return { items: fresh.slice(0, take), topTags: [] };
@@ -525,11 +571,15 @@ class Rule34VaultAPI {
     try {
       // ── Phase 1: Fetch history ──
       const [likedRes, bookmarkedRes] = await Promise.all([
-        this.searchLikedPosts(userId, 40).catch(() => ({ items: [] as Post[] })),
-        this.searchBookmarkedPosts(userId, 20).catch(() => ({ items: [] as Post[] })),
+        this.searchLikedPosts(userId, 40).catch(() => ({
+          items: [] as Post[],
+        })),
+        this.searchBookmarkedPosts(userId, 20).catch(() => ({
+          items: [] as Post[],
+        })),
       ]);
 
-      const likedPosts   = likedRes?.items   ?? [];
+      const likedPosts = likedRes?.items ?? [];
       const bookmarkedPosts = bookmarkedRes?.items ?? [];
       // Bookmarks first so they weight highest in recency calc
       const rawPosts = [...bookmarkedPosts, ...likedPosts];
@@ -537,10 +587,14 @@ class Rule34VaultAPI {
       if (rawPosts.length === 0) return fallback();
 
       // ── Phase 2: Hydrate tags ──
-      const needsDetail = rawPosts.filter((p) => !p.tags || p.tags.length === 0);
+      const needsDetail = rawPosts.filter(
+        (p) => !p.tags || p.tags.length === 0,
+      );
       if (needsDetail.length > 0) {
         const detailed = await Promise.all(
-          needsDetail.slice(0, 25).map((p) => this.getPost(p.id).catch(() => p))
+          needsDetail
+            .slice(0, 25)
+            .map((p) => this.getPost(p.id).catch(() => p)),
         );
         const dm = new Map(detailed.map((p) => [p.id, p]));
         for (let i = 0; i < rawPosts.length; i++) {
@@ -558,11 +612,14 @@ class Rule34VaultAPI {
 
       rawPosts.forEach((post, idx) => {
         const isBookmarked = bookmarkedPosts.some((p) => p.id === post.id);
-        const actionW  = isBookmarked ? 1.5 : 1.0;
+        const actionW = isBookmarked ? 1.5 : 1.0;
         const recencyW = 1 + (total - idx) / total; // 2.0 → 1.0 as idx increases
         for (const tag of post.tags ?? []) {
           const tw = typeWeight[tag.type] ?? 1;
-          tagScore.set(tag.value, (tagScore.get(tag.value) ?? 0) + tw * actionW * recencyW);
+          tagScore.set(
+            tag.value,
+            (tagScore.get(tag.value) ?? 0) + tw * actionW * recencyW,
+          );
         }
       });
 
@@ -575,11 +632,13 @@ class Rule34VaultAPI {
 
       // ── Phase 4: Rotate combos by page ──
       const seenIds = excludeIds ?? new Set<number>(rawPosts.map((p) => p.id));
-      const page  = Math.floor((seenIds.size) / Math.max(take, 1));
-      const shift = (page % 4); // 0,1,2,3 → different tag windows each page
+      const page = Math.floor(seenIds.size / Math.max(take, 1));
+      const shift = page % 4; // 0,1,2,3 → different tag windows each page
 
-      const coreCombo      = rankedTags.slice(shift,     shift + 2).filter(Boolean);
-      const discoveryCombo = rankedTags.slice(4 + shift, 4 + shift + 2).filter(Boolean);
+      const coreCombo = rankedTags.slice(shift, shift + 2).filter(Boolean);
+      const discoveryCombo = rankedTags
+        .slice(4 + shift, 4 + shift + 2)
+        .filter(Boolean);
 
       const fetchN = Math.ceil(take * 1.8);
 
@@ -587,17 +646,26 @@ class Rule34VaultAPI {
       const [poolA, poolB, poolC] = await Promise.all([
         // A: Core — strongest interest tags
         coreCombo.length
-          ? this.searchPosts(fetchN, cursor, { includeTags: coreCombo, sortBy: 1 })
-              .then((r) => r.items).catch(() => [] as Post[])
+          ? this.searchPosts(fetchN, cursor, {
+              includeTags: coreCombo,
+              sortBy: 1,
+            })
+              .then((r) => r.items)
+              .catch(() => [] as Post[])
           : Promise.resolve([] as Post[]),
         // B: Discovery — adjacent interest tags
         discoveryCombo.length
-          ? this.searchPosts(fetchN, cursor, { includeTags: discoveryCombo, sortBy: 1 })
-              .then((r) => r.items).catch(() => [] as Post[])
+          ? this.searchPosts(fetchN, cursor, {
+              includeTags: discoveryCombo,
+              sortBy: 1,
+            })
+              .then((r) => r.items)
+              .catch(() => [] as Post[])
           : Promise.resolve([] as Post[]),
         // C: Trending wildcard — popular posts regardless of tags
         this.searchPosts(Math.ceil(take * 0.4), cursor, { sortBy: 1 })
-          .then((r) => r.items).catch(() => [] as Post[]),
+          .then((r) => r.items)
+          .catch(() => [] as Post[]),
       ]);
 
       // ── Phase 6: Score posts by interest match + quality + freshness ──
@@ -607,24 +675,31 @@ class Rule34VaultAPI {
           s += tagScore.get(tag.value) ?? 0;
         }
         s += Math.log((post.likes ?? 0) + 1) * 1.5;
-        const ageDays = (Date.now() - new Date(post.posted).getTime()) / 86_400_000;
-        if (ageDays < 7)  s *= 1.15;
+        const ageDays =
+          (Date.now() - new Date(post.posted).getTime()) / 86_400_000;
+        if (ageDays < 7) s *= 1.15;
         if (ageDays < 30) s *= 1.05;
         return s;
       };
 
       // ── Phase 7: Merge with diversity caps ──
       // Pool ratios: A=40%, B=35%, C=25% (more diversity)
-      const coreMax  = Math.ceil(take * 0.40);
-      const discMax  = Math.ceil(take * 0.35);
+      const coreMax = Math.ceil(take * 0.4);
+      const discMax = Math.ceil(take * 0.35);
       const trendMax = Math.ceil(take * 0.25);
 
       const globalSeen = new Set(seenIds);
 
-      const pickFromPool = (pool: Post[], max: number, allowDuplicates = false): Post[] => {
+      const pickFromPool = (
+        pool: Post[],
+        max: number,
+        allowDuplicates = false,
+      ): Post[] => {
         // If we're running out of fresh content, relax the seen filter
-        const freshFilter = allowDuplicates ? (p: Post) => true : (p: Post) => !globalSeen.has(p.id);
-        
+        const freshFilter = allowDuplicates
+          ? (p: Post) => true
+          : (p: Post) => !globalSeen.has(p.id);
+
         // Score, take top 3x candidates for more variety, shuffle them, then pick max
         const candidates = pool
           .filter(freshFilter)
@@ -643,19 +718,23 @@ class Rule34VaultAPI {
       };
 
       // First try with strict filtering
-      let coreItems  = pickFromPool(poolA, coreMax);
-      let discItems  = pickFromPool(poolB, discMax);
+      let coreItems = pickFromPool(poolA, coreMax);
+      let discItems = pickFromPool(poolB, discMax);
       let trendItems = pickFromPool(poolC, trendMax);
 
       // If we don't have enough content, relax the filters
-      const totalItems = coreItems.length + discItems.length + trendItems.length;
+      const totalItems =
+        coreItems.length + discItems.length + trendItems.length;
       if (totalItems < take * 0.7) {
         // Allow some duplicates from trending pool
         const additionalTrend = pickFromPool(poolC, trendMax, true);
         trendItems = [...trendItems, ...additionalTrend].slice(0, trendMax);
-        
+
         // If still not enough, add more from discovery pool
-        if (coreItems.length + discItems.length + trendItems.length < take * 0.8) {
+        if (
+          coreItems.length + discItems.length + trendItems.length <
+          take * 0.8
+        ) {
           const additionalDisc = pickFromPool(poolB, discMax, true);
           discItems = [...discItems, ...additionalDisc].slice(0, discMax);
         }
@@ -677,22 +756,21 @@ class Rule34VaultAPI {
   }
 
   // ── Similar Posts ───────────────────────────────────────
-  async searchSimilarPosts(
-    post: Post,
-    take = 5
-  ): Promise<Post[]> {
+  async searchSimilarPosts(post: Post, take = 5): Promise<Post[]> {
     const tags = post.tags ?? [];
     // Prioritize artist > character > copyright > general tags
     const prioritized = [
-      ...tags.filter((t) => t.type === 8),  // artist
-      ...tags.filter((t) => t.type === 4),  // character
-      ...tags.filter((t) => t.type === 2),  // copyright
-      ...tags.filter((t) => t.type === 1),  // general
+      ...tags.filter((t) => t.type === 8), // artist
+      ...tags.filter((t) => t.type === 4), // character
+      ...tags.filter((t) => t.type === 2), // copyright
+      ...tags.filter((t) => t.type === 1), // general
     ];
     // Use top 3 tags for similarity search
     const searchTags = prioritized.slice(0, 3).map((t) => t.value);
     if (searchTags.length === 0) return [];
-    const data = await this.searchPosts(take + 5, null, { includeTags: searchTags });
+    const data = await this.searchPosts(take + 5, null, {
+      includeTags: searchTags,
+    });
     return data.items.filter((p) => p.id !== post.id).slice(0, take);
   }
 
@@ -724,11 +802,14 @@ class Rule34VaultAPI {
   async searchFeedPosts(
     userId: number,
     take = 30,
-    cursor?: string | null
+    cursor?: string | null,
   ): Promise<PaginatedResponse<Post>> {
     const body: Record<string, unknown> = { take };
     if (cursor) body.cursor = cursor;
-    return this.post<PaginatedResponse<Post>>(`/post/search/tag-subscriptions/${userId}`, body);
+    return this.post<PaginatedResponse<Post>>(
+      `/post/search/tag-subscriptions/${userId}`,
+      body,
+    );
   }
 
   // ── Tag Subscriptions ──────────────────────────────────
@@ -756,14 +837,14 @@ class Rule34VaultAPI {
   // ── Comments ──────────────────────────────────────────
   async getPostComments(
     postId: number,
-    take = 50
+    take = 50,
   ): Promise<PaginatedResponse<PostComment>> {
     return this.post(`/comment/post/${postId}`, { take });
   }
 
   async getRecentComments(
     take = 20,
-    cursor?: string | null
+    cursor?: string | null,
   ): Promise<PaginatedResponse<PostComment>> {
     const body: Record<string, unknown> = { take };
     if (cursor) body.cursor = cursor;
@@ -778,11 +859,11 @@ class Rule34VaultAPI {
 
 // ── Search filters ─────────────────────────────────────
 export interface SearchFilters {
-  type?: number | null;       // 0=image, 1=video, null=all
-  includeTags?: string[];     // tag name strings
-  minScore?: number;          // client-side: min likes threshold
-  sortBy?: number;            // 0=id, 1=likes, 2=views
-  postedFromDays?: number;    // 1=daily, 7=weekly, 30=monthly
+  type?: number | null; // 0=image, 1=video, null=all
+  includeTags?: string[]; // tag name strings
+  minScore?: number; // client-side: min likes threshold
+  sortBy?: number; // 0=id, 1=likes, 2=views
+  postedFromDays?: number; // 1=daily, 7=weekly, 30=monthly
 }
 
 // ── Post cache ─────────────────────────────────────────
@@ -823,7 +904,9 @@ export function clearPostCache() {
 function fyShuffleAll<T>(arr: T[]): void {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp;
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
   }
 }
 
@@ -835,8 +918,12 @@ function fyShuffleAll<T>(arr: T[]): void {
 function fyShuffleWindow<T>(arr: T[], windowSize: number): void {
   for (let i = 0; i < arr.length - 1; i++) {
     const max = Math.min(i + windowSize, arr.length - 1);
-    const j   = i + Math.floor(Math.random() * (max - i + 1));
-    if (i !== j) { const tmp = arr[i]; arr[i] = arr[j]; arr[j] = tmp; }
+    const j = i + Math.floor(Math.random() * (max - i + 1));
+    if (i !== j) {
+      const tmp = arr[i];
+      arr[i] = arr[j];
+      arr[j] = tmp;
+    }
   }
 }
 
@@ -859,5 +946,27 @@ export function getCacheStats() {
   return { size: postCache.size, max: CACHE_MAX };
 }
 
-export const api = new Rule34VaultAPI();
+// The raw R34V API instance (used directly by AuthContext for R34V-specific auth)
+export const r34vaultApi = new Rule34VaultAPI();
+
+// Site-aware proxy: auto-delegates to e621Api when e621 is active.
+// Every existing `import api from "../api/rule34vault"` becomes site-aware automatically.
+let _siteOverride: "r34vault" | "e621" | null = null;
+export function _setApiSiteOverride(site: "r34vault" | "e621" | null) {
+  _siteOverride = site;
+}
+
+const api: Rule34VaultAPI = new Proxy(r34vaultApi, {
+  get(target, prop, receiver) {
+    if (_siteOverride === "e621") {
+      try {
+        const e621 = require("./e621").default;
+        if (prop in e621) return (e621 as any)[prop];
+      } catch {}
+    }
+    return Reflect.get(target, prop, receiver);
+  },
+});
+
+export { api };
 export default api;

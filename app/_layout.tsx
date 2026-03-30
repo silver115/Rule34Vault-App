@@ -1,13 +1,24 @@
 import { DarkTheme, ThemeProvider } from "@react-navigation/native";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
+import React, { useEffect } from "react";
+import { setActiveSiteForApi } from "../api";
 import { AuthProvider } from "../contexts/AuthContext";
-import { PostListProvider } from "../contexts/PostListContext";
-import { PlaylistProvider } from "../contexts/PlaylistContext";
 import { FeedCountProvider } from "../contexts/FeedCountContext";
-import { AppThemeProvider, useAppTheme } from "../contexts/ThemeContext";
+import { PlaylistProvider } from "../contexts/PlaylistContext";
+import { PostListProvider } from "../contexts/PostListContext";
 import { SettingsProvider } from "../contexts/SettingsContext";
-import { Colors } from "../constants/theme";
+import { SiteProvider, useSite } from "../contexts/SiteContext";
+import { AppThemeProvider, useAppTheme } from "../contexts/ThemeContext";
+
+/** Keeps the API router module in sync with the active site from context */
+function SiteApiSync({ children }: { children: React.ReactNode }) {
+  const { activeSite } = useSite();
+  useEffect(() => {
+    setActiveSiteForApi(activeSite);
+  }, [activeSite]);
+  return <>{children}</>;
+}
 
 export { ErrorBoundary } from "expo-router";
 
@@ -57,9 +68,15 @@ function ThemedApp() {
         <Stack.Screen name="playlist/[id]" options={{ title: "Playlist" }} />
         <Stack.Screen name="tag/[id]" options={{ title: "Tag" }} />
         <Stack.Screen name="user-posts" options={{ title: "Posts" }} />
-        <Stack.Screen name="user-playlists" options={{ title: "My Playlists" }} />
+        <Stack.Screen
+          name="user-playlists"
+          options={{ title: "My Playlists" }}
+        />
         <Stack.Screen name="user/[username]" options={{ title: "User" }} />
-        <Stack.Screen name="followed-playlists" options={{ title: "Followed Playlists" }} />
+        <Stack.Screen
+          name="followed-playlists"
+          options={{ title: "Followed Playlists" }}
+        />
       </Stack>
     </ThemeProvider>
   );
@@ -68,17 +85,21 @@ function ThemedApp() {
 export default function RootLayout() {
   return (
     <AppThemeProvider>
-    <SettingsProvider>
-    <AuthProvider>
-      <FeedCountProvider>
-      <PlaylistProvider>
-      <PostListProvider>
-        <ThemedApp />
-      </PostListProvider>
-      </PlaylistProvider>
-      </FeedCountProvider>
-    </AuthProvider>
-    </SettingsProvider>
+      <SettingsProvider>
+        <SiteProvider>
+          <SiteApiSync>
+            <AuthProvider>
+              <FeedCountProvider>
+                <PlaylistProvider>
+                  <PostListProvider>
+                    <ThemedApp />
+                  </PostListProvider>
+                </PlaylistProvider>
+              </FeedCountProvider>
+            </AuthProvider>
+          </SiteApiSync>
+        </SiteProvider>
+      </SettingsProvider>
     </AppThemeProvider>
   );
 }

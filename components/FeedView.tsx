@@ -19,11 +19,12 @@ import {
     View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import api, { getMediaUrl, Post } from "../api/rule34vault";
+import api, { Post } from "../api/rule34vault";
 import { Colors, FontSize, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
 import { useSettings } from "../contexts/SettingsContext";
 import { downloadMedia } from "../utils/download";
+import { getSiteMediaUrl } from "../utils/media";
 import { sendRecSignal } from "../utils/recommendations";
 import { isBrokenPost, markBroken, onBrokenPostsChange } from "./PostCard";
 
@@ -60,7 +61,7 @@ export function FeedView({
 
   const filteredPosts = React.useMemo(
     () => posts.filter((p) => !isBrokenPost(p.id)),
-    [posts, setBrokenTick]
+    [posts, setBrokenTick],
   );
 
   // ── Viewability tracking ──
@@ -106,7 +107,7 @@ export function FeedView({
         const dir = delta > 0 ? 1 : -1;
         const nextIdx = Math.max(
           0,
-          Math.min(filteredPosts.length - 1, activeIndexRef.current + dir)
+          Math.min(filteredPosts.length - 1, activeIndexRef.current + dir),
         );
 
         if (nextIdx !== activeIndexRef.current) {
@@ -116,7 +117,9 @@ export function FeedView({
             animated: true,
           });
           setActiveIndex(nextIdx);
-          setTimeout(() => { isSnapping.current = false; }, 400);
+          setTimeout(() => {
+            isSnapping.current = false;
+          }, 400);
         }
       }, 50);
     };
@@ -128,23 +131,31 @@ export function FeedView({
   const toggleMute = useCallback(() => setIsMuted((m) => !m), []);
 
   // ── Native scroll handlers ──
-  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const now = Date.now();
-    const newOffset = e.nativeEvent.contentOffset.y;
-    const dt = Math.max(now - lastScrollTime.current, 1);
-    scrollVelocityY.current = (newOffset - scrollOffsetY.current) / dt;
-    scrollOffsetY.current = newOffset;
-    lastScrollTime.current = now;
-  }, []);
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const now = Date.now();
+      const newOffset = e.nativeEvent.contentOffset.y;
+      const dt = Math.max(now - lastScrollTime.current, 1);
+      scrollVelocityY.current = (newOffset - scrollOffsetY.current) / dt;
+      scrollOffsetY.current = newOffset;
+      lastScrollTime.current = now;
+    },
+    [],
+  );
 
-  const snapToIndex = useCallback((idx: number) => {
-    const clamped = Math.max(0, Math.min(filteredPosts.length - 1, idx));
-    isSnapping.current = true;
-    flatListRef.current?.scrollToIndex({ index: clamped, animated: true });
-    setActiveIndex(clamped);
-    activeIndexRef.current = clamped;
-    setTimeout(() => { isSnapping.current = false; }, 500);
-  }, [filteredPosts.length]);
+  const snapToIndex = useCallback(
+    (idx: number) => {
+      const clamped = Math.max(0, Math.min(filteredPosts.length - 1, idx));
+      isSnapping.current = true;
+      flatListRef.current?.scrollToIndex({ index: clamped, animated: true });
+      setActiveIndex(clamped);
+      activeIndexRef.current = clamped;
+      setTimeout(() => {
+        isSnapping.current = false;
+      }, 500);
+    },
+    [filteredPosts.length],
+  );
 
   const handleScrollEndDrag = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -165,7 +176,7 @@ export function FeedView({
         snapToIndex(currentIdx);
       }
     },
-    [screenH, snapToIndex]
+    [screenH, snapToIndex],
   );
 
   const handleMomentumScrollEnd = useCallback(
@@ -180,7 +191,7 @@ export function FeedView({
         activeIndexRef.current = clamped;
       }
     },
-    [screenH, filteredPosts.length]
+    [screenH, filteredPosts.length],
   );
 
   const renderItem = useCallback(
@@ -198,7 +209,16 @@ export function FeedView({
         onExit={onExit}
       />
     ),
-    [activeIndex, screenW, screenH, insets.top, insets.bottom, isMuted, toggleMute, onExit]
+    [
+      activeIndex,
+      screenW,
+      screenH,
+      insets.top,
+      insets.bottom,
+      isMuted,
+      toggleMute,
+      onExit,
+    ],
   );
 
   const keyExtractor = useCallback((item: Post) => String(item.id), []);
@@ -209,7 +229,7 @@ export function FeedView({
       offset: screenH * index,
       index,
     }),
-    [screenH]
+    [screenH],
   );
 
   if (isLoading && filteredPosts.length === 0) {
@@ -239,8 +259,12 @@ export function FeedView({
         bounces={false}
         scrollEventThrottle={16}
         onScroll={Platform.OS !== "web" ? handleScroll : undefined}
-        onScrollEndDrag={Platform.OS !== "web" ? handleScrollEndDrag : undefined}
-        onMomentumScrollEnd={Platform.OS !== "web" ? handleMomentumScrollEnd : undefined}
+        onScrollEndDrag={
+          Platform.OS !== "web" ? handleScrollEndDrag : undefined
+        }
+        onMomentumScrollEnd={
+          Platform.OS !== "web" ? handleMomentumScrollEnd : undefined
+        }
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={viewabilityConfig}
         getItemLayout={getItemLayout}
@@ -300,8 +324,8 @@ const FeedItem = memo(function FeedItem({
   const { qualityOption } = useSettings();
 
   const isVideo = post.type === 1;
-  const fullUrl = getMediaUrl(post, "full");
-  const thumbUrl = getMediaUrl(post, "thumb");
+  const fullUrl = getSiteMediaUrl(post, "full");
+  const thumbUrl = getSiteMediaUrl(post, "thumb");
   const hasComments = (post.comments ?? 0) > 0;
 
   // Action states
@@ -330,13 +354,18 @@ const FeedItem = memo(function FeedItem({
   useEffect(() => {
     if (!isActive || !isLoggedIn) return;
     let cancelled = false;
-    api.getPostActionState(post.id).then((state) => {
-      if (!cancelled) {
-        setLiked(state.isLiked);
-        setBookmarked(state.isBookmarked);
-      }
-    }).catch(() => {});
-    return () => { cancelled = true; };
+    api
+      .getPostActionState(post.id)
+      .then((state) => {
+        if (!cancelled) {
+          setLiked(state.isLiked);
+          setBookmarked(state.isBookmarked);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [isActive, post.id, isLoggedIn]);
 
   // Auto-play/pause video based on visibility + mute control
@@ -411,7 +440,8 @@ const FeedItem = memo(function FeedItem({
       } else {
         await api.likePost(post.id);
         setLiked(true);
-        if (token && post.tags) sendRecSignal(token, post.id, "like", post.tags);
+        if (token && post.tags)
+          sendRecSignal(token, post.id, "like", post.tags);
       }
     } catch {}
   }, [liked, isLoggedIn, post.id, token]);
@@ -425,7 +455,8 @@ const FeedItem = memo(function FeedItem({
       } else {
         await api.bookmarkPost(post.id);
         setBookmarked(true);
-        if (token && post.tags) sendRecSignal(token, post.id, "bookmark", post.tags);
+        if (token && post.tags)
+          sendRecSignal(token, post.id, "bookmark", post.tags);
       }
     } catch {}
   }, [bookmarked, isLoggedIn, post.id, token]);
@@ -468,7 +499,9 @@ const FeedItem = memo(function FeedItem({
           isVideo ? (
             Platform.OS === "web" ? (
               <video
-                ref={(el) => { webVideoRef.current = el; }}
+                ref={(el) => {
+                  webVideoRef.current = el;
+                }}
                 src={fullUrl}
                 poster={thumbUrl}
                 style={{
@@ -499,7 +532,9 @@ const FeedItem = memo(function FeedItem({
             )
           ) : (
             <Image
-              source={{ uri: getMediaUrl(post, qualityOption.detailVariant) }}
+              source={{
+                uri: getSiteMediaUrl(post, qualityOption.detailVariant),
+              }}
               placeholder={{ uri: thumbUrl }}
               style={StyleSheet.absoluteFill}
               contentFit="contain"
@@ -620,7 +655,11 @@ const FeedItem = memo(function FeedItem({
         {hasComments && (
           <Pressable style={styles.actionBtn} onPress={handleOpenComments}>
             <View style={styles.actionCircle}>
-              <Ionicons name="chatbubble-ellipses-outline" size={22} color="#fff" />
+              <Ionicons
+                name="chatbubble-ellipses-outline"
+                size={22}
+                color="#fff"
+              />
             </View>
             <Text style={styles.actionCount}>{post.comments}</Text>
           </Pressable>
