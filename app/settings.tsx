@@ -21,7 +21,7 @@ import {
     ViewingMode,
     useSettings,
 } from "../contexts/SettingsContext";
-import { useSite } from "../contexts/SiteContext";
+import { SiteName, useSite } from "../contexts/SiteContext";
 import {
     ACCENT_COLORS,
     AccentColor,
@@ -56,6 +56,7 @@ export default function SettingsScreen() {
   } = useSettings();
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
+  const [siteDropdownOpen, setSiteDropdownOpen] = useState(false);
   const [themeDropdownOpen, setThemeDropdownOpen] = useState(false);
   const [accentDropdownOpen, setAccentDropdownOpen] = useState(false);
   const [qualityDropdownOpen, setQualityDropdownOpen] = useState(false);
@@ -107,6 +108,30 @@ export default function SettingsScreen() {
     }
   }
 
+  function handleSiteSelect(site: SiteName) {
+    setSiteDropdownOpen(false);
+    if (site === activeSite) return;
+    if (isLoggedIn) {
+      Alert.alert(
+        "Switch Site",
+        `Switching to ${site === "e621" ? "e621.net" : "Rule34Vault"} will sign you out of your current session. Continue?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Switch",
+            style: "destructive",
+            onPress: () => {
+              logout();
+              setActiveSite(site);
+            },
+          },
+        ],
+      );
+    } else {
+      setActiveSite(site);
+    }
+  }
+
   function handleSignOut() {
     if (Platform.OS === "web") {
       logout();
@@ -145,12 +170,15 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
-        {/* Content Source Toggle */}
+        {/* Content Source */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
           Content Source
         </Text>
         <View style={[styles.card, { backgroundColor: colors.bgCard }]}>
-          <View style={[styles.row, { borderBottomColor: colors.border }]}>
+          <Pressable
+            style={[styles.row, { borderBottomColor: colors.border }]}
+            onPress={() => setSiteDropdownOpen(true)}
+          >
             <Ionicons
               name={isE621 ? "paw" : "shield-checkmark"}
               size={20}
@@ -166,35 +194,86 @@ export default function SettingsScreen() {
                   : "Default content source"}
               </Text>
             </View>
-            <Switch
-              value={isE621}
-              onValueChange={(val) => {
-                const newSite = val ? "e621" : "r34vault";
-                if (isLoggedIn) {
-                  Alert.alert(
-                    "Switch Site",
-                    `Switching to ${val ? "e621" : "Rule34Vault"} will sign you out of your current session. Continue?`,
-                    [
-                      { text: "Cancel", style: "cancel" },
-                      {
-                        text: "Switch",
-                        style: "destructive",
-                        onPress: async () => {
-                          await logout();
-                          setActiveSite(newSite);
-                        },
-                      },
-                    ],
-                  );
-                } else {
-                  setActiveSite(newSite);
-                }
-              }}
-              trackColor={{ false: colors.border, true: "#00549f" }}
-              thumbColor="#fff"
+            <Ionicons
+              name="chevron-forward"
+              size={16}
+              color={colors.textMuted}
             />
-          </View>
+          </Pressable>
         </View>
+
+        {/* Site Picker Modal */}
+        <Modal
+          visible={siteDropdownOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setSiteDropdownOpen(false)}
+        >
+          <Pressable
+            style={styles.modalOverlay}
+            onPress={() => setSiteDropdownOpen(false)}
+          >
+            <View
+              style={[
+                styles.modalContent,
+                {
+                  backgroundColor: colors.bgElevated,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Choose Content Source
+              </Text>
+              <Pressable
+                style={[
+                  styles.themeOption,
+                  { borderColor: colors.border },
+                  activeSite === "r34vault" && {
+                    borderColor: colors.accent,
+                    backgroundColor: colors.accent + "15",
+                  },
+                ]}
+                onPress={() => handleSiteSelect("r34vault")}
+              >
+                <Ionicons
+                  name="shield-checkmark"
+                  size={22}
+                  color={colors.accent}
+                />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.themeLabel, { color: colors.text }]}>
+                    Rule34Vault{activeSite === "r34vault" ? "  ✓" : ""}
+                  </Text>
+                  <Text style={[styles.themeSub, { color: colors.textMuted }]}>
+                    Default content source
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.themeOption,
+                  { borderColor: colors.border },
+                  activeSite === "e621" && {
+                    borderColor: "#00549f",
+                    backgroundColor: "#00549f15",
+                  },
+                ]}
+                onPress={() => handleSiteSelect("e621")}
+              >
+                <Ionicons name="paw" size={22} color="#00549f" />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={[styles.themeLabel, { color: colors.text }]}>
+                    e621.net{activeSite === "e621" ? "  ✓" : ""}
+                  </Text>
+                  <Text style={[styles.themeSub, { color: colors.textMuted }]}>
+                    Furry-focused booru with e621 account
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Modal>
 
         {/* Appearance Section */}
         <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
