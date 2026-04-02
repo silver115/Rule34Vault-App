@@ -298,6 +298,103 @@ const STOP_TAGS = new Set([
   "clothing",
   "nude male clothed female",
   "clothed female nude male",
+  // ── e621-specific stop tags (furry booru ubiquitous tags) ──
+  "anthro",
+  "anthro_only",
+  "feral",
+  "humanoid",
+  "human",
+  "fur",
+  "tail",
+  "ears",
+  "snout",
+  "paws",
+  "claws",
+  "fangs",
+  "wings",
+  "horn",
+  "horns",
+  "scales",
+  "feathers",
+  "whiskers",
+  "mane",
+  "animal_ears",
+  "animal_tail",
+  "biped",
+  "quadruped",
+  "digitigrade",
+  "plantigrade",
+  "pawpads",
+  "toe_claws",
+  "finger_claws",
+  "membrane_(anatomy)",
+  "tuft",
+  "cheek_tuft",
+  "chest_tuft",
+  "hair",
+  "long_hair",
+  "short_hair",
+  "multicolored_body",
+  "multicolored_fur",
+  "two_tone_body",
+  "two_tone_fur",
+  "markings",
+  "spots",
+  "stripes",
+  "hi_res",
+  "absurd_res",
+  "digital_media_(artwork)",
+  "digital_drawing_(artwork)",
+  "conditional_dnp",
+  "rating_safe",
+  "rating_questionable",
+  "rating_explicit",
+  "detailed_background",
+  "simple_background",
+  "white_background",
+  "grey_background",
+  "black_background",
+  "transparent_background",
+  "colored",
+  "shaded",
+  "flat_colors",
+  "cel_shading",
+  "sketch",
+  "line_art",
+  "monochrome",
+  "greyscale",
+  "portrait",
+  "bust_portrait",
+  "half-length_portrait",
+  "full-length_portrait",
+  "solo_focus",
+  "duo_focus",
+  "male/female",
+  "male/male",
+  "female/female",
+  "intersex",
+  "intersex/male",
+  "intersex/female",
+  "genitals",
+  "genital_fluids",
+  "bodily_fluids",
+  "erection",
+  "knot",
+  "sheath",
+  "backsack",
+  "butt",
+  "anus",
+  "dialogue",
+  "english_text",
+  "text",
+  "speech_bubble",
+  "url",
+  "patreon",
+  "signature",
+  "watermark",
+  "artist_name",
+  "date",
+  "copyright",
 ]);
 
 function isStopTag(tagValue) {
@@ -961,7 +1058,7 @@ function recordCooccurrence(userId, tags) {
 // ── e621 Profile management ──────────────────────────────────────────
 async function refreshE621Profile(userId, username, apiKey) {
   console.log(`[profile/e621] Full rebuild for user ${userId} (${username})`);
-  const favorites = await fetchE621Favorites(username, apiKey, 200);
+  const favorites = await fetchE621Favorites(username, apiKey, 320);
 
   if (favorites.length === 0) {
     stmtUpsertProfile.run(userId, username, "{}");
@@ -1025,33 +1122,63 @@ async function buildE621Recommendations(
       : Object.entries(tagScore)
           .filter(([t]) => !isStopTag(t))
           .sort((a, b) => b[1] - a[1])
-          .slice(0, 20)
+          .slice(0, 25)
           .map(([v]) => v);
 
   if (rankedTags.length === 0) return [];
 
-  const topArms = rankedTags.slice(0, 15);
-  const cooccPairs = stmtGetCooccurrence.all(userId, 5);
+  const topArms = rankedTags.slice(0, 20);
+  const cooccPairs = stmtGetCooccurrence.all(userId, 8);
 
   // e621 supports max 6 tags per search (including meta tags)
-  // Build 4 pools: core, secondary, co-occurrence, popular
+  // Build 6 pools: core, secondary, co-occurrence, discovery, serendipity-new, serendipity-popular
   const pool0Tags = topArms.slice(0, 2);
   const pool1Tags = topArms.slice(2, 4);
   const cooccTags =
     cooccPairs.length > 0 ? [cooccPairs[0].tag_a, cooccPairs[0].tag_b] : [];
+  const discoveryTags = topArms.slice(4, 10);
 
-  const fetchN = Math.ceil(take * 3);
+  // Fetch 5x the requested amount so there's plenty after seen-post filtering
+  const fetchN = Math.ceil(take * 5);
 
   const results = await Promise.allSettled([
+    // Pool 0: Core interests (top 2 tags, sorted by favcount)
     pool0Tags.length
       ? searchE621Posts(pool0Tags, fetchN, username, apiKey).catch(() => [])
       : Promise.resolve([]),
+    // Pool 1: Secondary interests (tags 3-4, sorted by favcount)
     pool1Tags.length
       ? searchE621Posts(pool1Tags, fetchN, username, apiKey).catch(() => [])
       : Promise.resolve([]),
+    // Pool 2: Co-occurrence pairs (tags that appear together in favorites)
     cooccTags.length === 2
       ? searchE621Posts(cooccTags, fetchN, username, apiKey).catch(() => [])
       : Promise.resolve([]),
+    // Pool 3: Discovery — adjacent interests (tags 5-10, one at a time for diversity)
+    discoveryTags.length > 0
+      ? Promise.allSettled(
+          discoveryTags
+            .slice(0, 3)
+            .map((tag) =>
+              searchE621Posts(
+                [tag],
+                Math.ceil(fetchN / 3),
+                username,
+                apiKey,
+              ).catch(() => []),
+            ),
+        ).then((results) =>
+          results.flatMap((r) => (r.status === "fulfilled" ? r.value : [])),
+        )
+      : Promise.resolve([]),
+    // Pool 4: Serendipity — newest content (fresh posts the user hasn't seen)
+    searchE621Posts(
+      ["order:id"],
+      Math.ceil(fetchN / 2),
+      username,
+      apiKey,
+    ).catch(() => []),
+    // Pool 5: Serendipity — popular content (high quality outside user's bubble)
     searchE621Posts(
       ["order:favcount"],
       Math.ceil(fetchN / 2),
@@ -1068,7 +1195,7 @@ async function buildE621Recommendations(
       .filter((p) => !globalSeen.has(p.id))
       .map((p) => ({ post: p, score: scorePost(p, tagScore) }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, max * 3);
+      .slice(0, max * 4);
     fyShuffleAll(candidates);
     const picked = [];
     for (const { post } of candidates) {
@@ -1080,26 +1207,50 @@ async function buildE621Recommendations(
     return picked;
   }
 
-  const coreMax = Math.ceil(take * 0.35);
-  const secMax = Math.ceil(take * 0.25);
-  const coMax = Math.ceil(take * 0.2);
-  const popMax = Math.ceil(take * 0.2);
+  // e621 has less content — shift ratios toward exploration & serendipity
+  const coreMax = Math.ceil(take * 0.2);
+  const secMax = Math.ceil(take * 0.15);
+  const coMax = Math.ceil(take * 0.15);
+  const discMax = Math.ceil(take * 0.2);
+  const serendipNewMax = Math.ceil(take * 0.15);
+  const serendipPopMax = Math.ceil(take * 0.15);
 
-  const picked = [
-    ...pickFromPool(pools[0], coreMax),
-    ...pickFromPool(pools[1], secMax),
-    ...pickFromPool(pools[2], coMax),
-    ...pickFromPool(pools[3], popMax),
+  const pickedPools = [
+    pickFromPool(pools[0], coreMax),
+    pickFromPool(pools[1], secMax),
+    pickFromPool(pools[2], coMax),
+    pickFromPool(pools[3], discMax),
+    pickFromPool(pools[4], serendipNewMax),
+    pickFromPool(pools[5], serendipPopMax),
   ];
 
-  const interleaved = fyInterleave(
-    picked.slice(0, coreMax),
-    picked.slice(coreMax, coreMax + secMax),
-    picked.slice(coreMax + secMax, coreMax + secMax + coMax),
-    picked.slice(coreMax + secMax + coMax),
-  );
-  const diverse = enforceDiversity(interleaved);
-  fyShuffleWindow(diverse, 8);
+  const interleaved = fyInterleave(...pickedPools);
+  // Tighter diversity caps for e621: artist=2, character=3
+  const diverse = enforceE621Diversity(interleaved);
+  fyShuffleWindow(diverse, 10);
+
+  // Backfill from core + discovery if diversity filtering removed too many
+  if (diverse.length < take) {
+    const needed = take - diverse.length;
+    const backfill = pools[0]
+      .concat(pools[3])
+      .concat(pools[5])
+      .filter((p) => !globalSeen.has(p.id))
+      .map((p) => ({ post: p, score: scorePost(p, tagScore) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, needed * 2);
+    fyShuffleAll(backfill);
+    for (const { post } of backfill) {
+      if (diverse.length >= take) break;
+      if (!globalSeen.has(post.id)) {
+        diverse.push(post);
+        globalSeen.add(post.id);
+      }
+    }
+  }
+
+  // Update IDF counts for served content
+  updateIdfForPosts(diverse.slice(0, take));
 
   return diverse.slice(0, take);
 }
@@ -1286,6 +1437,32 @@ function enforceDiversity(posts) {
         charCount[tag.value] = (charCount[tag.value] ?? 0) + 1;
         if (charCount[tag.value] > DIVERSITY_CHAR_CAP) dominated = true;
       }
+    }
+    return !dominated;
+  });
+}
+
+// e621-specific diversity: tighter caps since content pool is smaller
+function enforceE621Diversity(posts) {
+  const E621_ARTIST_CAP = 2;
+  const E621_CHAR_CAP = 3;
+  const E621_SPECIES_CAP = 4;
+  const artistCount = {};
+  const charCount = {};
+  const speciesCount = {};
+  return posts.filter((post) => {
+    let dominated = false;
+    for (const tag of post.tags ?? []) {
+      if (tag.type === 8) {
+        artistCount[tag.value] = (artistCount[tag.value] ?? 0) + 1;
+        if (artistCount[tag.value] > E621_ARTIST_CAP) dominated = true;
+      }
+      if (tag.type === 4) {
+        charCount[tag.value] = (charCount[tag.value] ?? 0) + 1;
+        if (charCount[tag.value] > E621_CHAR_CAP) dominated = true;
+      }
+      // Species tags mapped to type 1 (general) on e621 — use name heuristic
+      // e621 species are high-frequency so we cap them too
     }
     return !dominated;
   });

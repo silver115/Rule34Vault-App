@@ -29,7 +29,7 @@ const PAGE_SIZE = 30;
 
 export default function ForYouScreen() {
   const { isLoggedIn, user, token } = useAuth();
-  const { isE621 } = useSite();
+  const { isE621, activeSite } = useSite();
   const { colors } = useAppTheme();
   const { scrollMode } = useSettings();
   const activeApi = isE621 ? e621Api : api;
@@ -37,7 +37,7 @@ export default function ForYouScreen() {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
 
-  const usingServer = hasRecServer() && !isE621; // e621 mode uses client-side algorithm
+  const usingServer = hasRecServer();
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [topTags, setTopTags] = useState<string[]>([]);
@@ -146,14 +146,14 @@ export default function ForYouScreen() {
         loadingRef.current = false;
       }
     },
-    [isLoggedIn, user, token, usingServer],
+    [isLoggedIn, user, token, usingServer, activeSite],
   );
 
   useEffect(() => {
     if (isLoggedIn && user) {
       load(true);
     }
-  }, [isLoggedIn, user?.id]);
+  }, [isLoggedIn, user?.id, activeSite]);
 
   if (!isLoggedIn) {
     return (

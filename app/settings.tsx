@@ -108,51 +108,86 @@ export default function SettingsScreen() {
     }
   }
 
+  async function isRemembered(): Promise<boolean> {
+    const prefix = isE621 ? "remember_e621" : "remember_r34v";
+    try {
+      if (Platform.OS === "web") {
+        return localStorage.getItem(prefix) === "true";
+      }
+      const SecureStore = require("expo-secure-store");
+      return (await SecureStore.getItemAsync(prefix)) === "true";
+    } catch {
+      return false;
+    }
+  }
+
   async function handleSiteSelect(site: SiteName) {
     setSiteDropdownOpen(false);
     if (site === activeSite) return;
-    if (isLoggedIn) {
-      if (Platform.OS === "web") {
-        if (
-          window.confirm(
-            `Switching to ${
-              site === "e621" ? "e621.net" : "Rule34Vault"
-            } will sign you out of your current session. Continue?`,
-          )
-        ) {
-          try {
-            await logout();
-          } catch {}
-          setActiveSite(site);
-        }
-      } else {
-        Alert.alert(
-          "Switch Site",
+
+    // If "Remember Me" is on, skip logout — credentials survive for auto-login on return
+    const remembered = await isRemembered();
+    if (remembered || !isLoggedIn) {
+      setActiveSite(site);
+      return;
+    }
+
+    // Not remembered + logged in → confirm logout
+    if (Platform.OS === "web") {
+      if (
+        window.confirm(
           `Switching to ${
             site === "e621" ? "e621.net" : "Rule34Vault"
           } will sign you out of your current session. Continue?`,
-          [
-            { text: "Cancel", style: "cancel" },
-            {
-              text: "Switch",
-              style: "destructive",
-              onPress: async () => {
-                try {
-                  await logout();
-                } catch {}
-                setActiveSite(site);
-              },
-            },
-          ],
-        );
+        )
+      ) {
+        try {
+          await logout();
+        } catch {}
+        setActiveSite(site);
       }
     } else {
-      setActiveSite(site);
+      Alert.alert(
+        "Switch Site",
+        `Switching to ${
+          site === "e621" ? "e621.net" : "Rule34Vault"
+        } will sign you out of your current session. Continue?`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Switch",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                await logout();
+              } catch {}
+              setActiveSite(site);
+            },
+          },
+        ],
+      );
     }
+  }
+
+  async function clearRemembered() {
+    const prefix = isE621 ? "remember_e621" : "remember_r34v";
+    try {
+      if (Platform.OS === "web") {
+        localStorage.removeItem(prefix);
+        localStorage.removeItem(`${prefix}_user`);
+        localStorage.removeItem(`${prefix}_pass`);
+      } else {
+        const SecureStore = require("expo-secure-store");
+        await SecureStore.deleteItemAsync(prefix);
+        await SecureStore.deleteItemAsync(`${prefix}_user`);
+        await SecureStore.deleteItemAsync(`${prefix}_pass`);
+      }
+    } catch {}
   }
 
   function handleSignOut() {
     if (Platform.OS === "web") {
+      clearRemembered();
       logout();
       router.replace("/");
     } else {
@@ -161,8 +196,9 @@ export default function SettingsScreen() {
         {
           text: "Sign Out",
           style: "destructive",
-          onPress: () => {
-            logout();
+          onPress: async () => {
+            await clearRemembered();
+            await logout();
             router.replace("/");
           },
         },

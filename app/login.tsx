@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
     KeyboardAvoidingView,
@@ -9,22 +9,76 @@ import {
     StyleSheet,
     Text,
     TextInput,
-    View
+    View,
 } from "react-native";
 import { Colors, FontSize, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
 import { useSite } from "../contexts/SiteContext";
 import { useAppTheme } from "../contexts/ThemeContext";
 
+const credStorage = {
+  async get(key: string): Promise<string | null> {
+    if (Platform.OS === "web") {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    }
+    const SecureStore = require("expo-secure-store");
+    return SecureStore.getItemAsync(key);
+  },
+  async set(key: string, value: string): Promise<void> {
+    if (Platform.OS === "web") {
+      try {
+        localStorage.setItem(key, value);
+      } catch {}
+      return;
+    }
+    const SecureStore = require("expo-secure-store");
+    return SecureStore.setItemAsync(key, value);
+  },
+  async remove(key: string): Promise<void> {
+    if (Platform.OS === "web") {
+      try {
+        localStorage.removeItem(key);
+      } catch {}
+      return;
+    }
+    const SecureStore = require("expo-secure-store");
+    return SecureStore.deleteItemAsync(key);
+  },
+};
+
 export default function LoginScreen() {
   const router = useRouter();
   const { login } = useAuth();
-  const { isE621 } = useSite();
+  const { isE621, activeSite } = useSite();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  // Load saved credentials + remember-me preference for current site
+  useEffect(() => {
+    (async () => {
+      const prefix = isE621 ? "remember_e621" : "remember_r34v";
+      const remembered = await credStorage.get(prefix);
+      if (remembered === "true") {
+        setRememberMe(true);
+        const savedUser = await credStorage.get(`${prefix}_user`);
+        const savedPass = await credStorage.get(`${prefix}_pass`);
+        if (savedUser) setEmail(savedUser);
+        if (savedPass) setPassword(savedPass);
+      } else {
+        setRememberMe(false);
+        setEmail("");
+        setPassword("");
+      }
+    })();
+  }, [activeSite]);
 
   async function handleLogin() {
     if (!email.trim() || !password.trim()) {
@@ -39,6 +93,17 @@ export default function LoginScreen() {
     setError(null);
     try {
       await login(email.trim(), password);
+      // Save or clear remembered credentials
+      const prefix = isE621 ? "remember_e621" : "remember_r34v";
+      if (rememberMe) {
+        await credStorage.set(prefix, "true");
+        await credStorage.set(`${prefix}_user`, email.trim());
+        await credStorage.set(`${prefix}_pass`, password);
+      } else {
+        await credStorage.remove(prefix);
+        await credStorage.remove(`${prefix}_user`);
+        await credStorage.remove(`${prefix}_pass`);
+      }
       router.back();
     } catch (e: any) {
       setError(e.message || "Login failed. Check your credentials.");
@@ -162,10 +227,37 @@ export default function LoginScreen() {
               <Text style={styles.loginBtnText}>Sign In</Text>
             )}
           </Pressable>
+
+          <Pressable
+            style={styles.rememberRow}
+            onPress={() => setRememberMe(!rememberMe)}
+          >
+            <View
+              style={[
+                styles.checkbox,
+                { borderColor: colors.border },
+                rememberMe && {
+                  backgroundColor: colors.accent,
+                  borderColor: colors.accent,
+                },
+              ]}
+            >
+              {rememberMe && (
+                <Ionicons name="checkmark" size={14} color="#fff" />
+              )}
+            </View>
+            <Text
+              style={[styles.rememberText, { color: colors.textSecondary }]}
+            >
+              Remember me
+            </Text>
+          </Pressable>
         </View>
 
         <Text style={[styles.disclaimer, { color: colors.textMuted }]}>
-          Your credentials are stored securely on-device only.
+          {rememberMe
+            ? "Your credentials will be saved securely on-device for auto-login."
+            : "Your credentials are stored securely on-device only."}
         </Text>
         {isE621 && (
           <Pressable
@@ -288,5 +380,24 @@ const styles = StyleSheet.create({
   apiKeyLinkText: {
     fontSize: FontSize.sm,
     fontWeight: "600",
+  },
+  rememberRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+    alignSelf: "center",
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  rememberText: {
+    fontSize: FontSize.sm,
+    fontWeight: "500",
   },
 });

@@ -10,6 +10,7 @@ import { PostGrid } from "../../components/PostGrid";
 import { TikTokFeed } from "../../components/TikTokFeed";
 import { Colors, FontSize, Radius, Spacing } from "../../constants/theme";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useSite } from "../../contexts/SiteContext";
 import { useAppTheme } from "../../contexts/ThemeContext";
 
 type FeedType = "recent" | "hot" | "highest" | "comments";
@@ -26,6 +27,7 @@ const FEED_OPTIONS: {
 ];
 
 export default function BrowseScreen() {
+  const { activeSite } = useSite();
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -133,8 +135,11 @@ export default function BrowseScreen() {
   }
 
   useEffect(() => {
+    setPosts([]);
+    cursorRef.current = null;
+    hasMoreRef.current = true;
     doLoad(true);
-  }, []);
+  }, [activeSite]);
 
   const activeFeed = FEED_OPTIONS.find((f) => f.key === feedType)!;
   const { colors } = useAppTheme();
