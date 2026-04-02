@@ -733,10 +733,10 @@ const E621_UA = "Rule34VaultRecServer/1.0 (by Puro115 on e621)";
 let e621LastReq = 0;
 
 async function e621Fetch(method, path, params, username, apiKey) {
-  // Rate limit: 1 req/sec
+  // Rate limit: 2 req/sec (e621 guideline: max 2 requests per second)
   const now = Date.now();
-  if (now - e621LastReq < 600)
-    await new Promise((r) => setTimeout(r, 600 - (now - e621LastReq)));
+  if (now - e621LastReq < 500)
+    await new Promise((r) => setTimeout(r, 500 - (now - e621LastReq)));
   e621LastReq = Date.now();
 
   let url = `${E621_BASE}${path}`;

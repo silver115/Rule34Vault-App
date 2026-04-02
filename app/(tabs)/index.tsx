@@ -83,7 +83,11 @@ export default function BrowseScreen() {
       if (!data.items.length || !data.cursor) hasMoreRef.current = false;
 
       let items = data.items;
-      const needsDetails = minScore > 0 || currentFeed === "comments";
+      // e621 search already returns full post data (likes, comments, etc.)
+      // so skip the expensive batch detail-fetch for e621
+      const isE621Site = activeSite === "e621";
+      const needsDetails =
+        !isE621Site && (minScore > 0 || currentFeed === "comments");
       if (needsDetails) {
         const detailed = await activeApi.getPostsBatch(items.map((p) => p.id));
         const detailMap = new Map(detailed.map((p) => [p.id, p]));

@@ -106,14 +106,16 @@ export default function ForYouScreen() {
         let tags: string[] = [];
 
         if (usingServer) {
-          // Rec server is active — only show algorithm posts, no random fallback
+          // Rec server is active — try server-side recommendations first
           const serverResult = await fetchRecommendations(token, PAGE_SIZE);
-          if (serverResult) {
+          if (serverResult && serverResult.posts.length > 0) {
             items = serverResult.posts;
             tags = serverResult.topTags;
           }
-        } else {
-          // No rec server or e621 mode — use client-side algorithm
+        }
+
+        // Fallback: client-side algorithm if server failed, returned empty, or not configured
+        if (items.length === 0) {
           const result = await activeApi.searchForYouPosts(
             user.id,
             PAGE_SIZE,
