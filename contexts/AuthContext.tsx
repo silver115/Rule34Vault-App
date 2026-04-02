@@ -71,10 +71,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Reload auth whenever site changes
   useEffect(() => {
-    if (siteReady) loadStoredAuth();
+    if (siteReady) {
+      console.log("[AuthContext] siteReady, loadStoredAuth for", activeSite);
+      loadStoredAuth();
+    }
   }, [activeSite, siteReady]);
 
   async function loadStoredAuth() {
+    console.log("[AuthContext] loadStoredAuth start");
     setIsLoading(true);
     try {
       if (isE621) {

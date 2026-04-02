@@ -1,4 +1,10 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useState,
+} from "react";
 import { Platform } from "react-native";
 
 export type SiteName = "r34vault" | "e621";
@@ -8,14 +14,20 @@ const SITE_KEY = "active_site";
 const storage = {
   async getItem(key: string): Promise<string | null> {
     if (Platform.OS === "web") {
-      try { return localStorage.getItem(key); } catch { return null; }
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
     }
     const SecureStore = require("expo-secure-store");
     return SecureStore.getItemAsync(key);
   },
   async setItem(key: string, value: string): Promise<void> {
     if (Platform.OS === "web") {
-      try { localStorage.setItem(key, value); } catch {}
+      try {
+        localStorage.setItem(key, value);
+      } catch {}
       return;
     }
     const SecureStore = require("expo-secure-store");
@@ -44,14 +56,21 @@ export function SiteProvider({ children }: { children: React.ReactNode }) {
   const [siteReady, setSiteReady] = useState(false);
 
   useEffect(() => {
-    storage.getItem(SITE_KEY).then((val) => {
-      if (val === "e621" || val === "r34vault") setActiveSiteState(val);
-    }).catch(() => {}).finally(() => setSiteReady(true));
+    storage
+      .getItem(SITE_KEY)
+      .then((val) => {
+        if (val === "e621" || val === "r34vault") setActiveSiteState(val);
+      })
+      .catch(() => {})
+      .finally(() => setSiteReady(true));
   }, []);
 
   const setActiveSite = useCallback((site: SiteName) => {
+    console.log("[SiteContext] setActiveSite called with:", site);
     setActiveSiteState(site);
-    storage.setItem(SITE_KEY, site).catch(() => {});
+    storage.setItem(SITE_KEY, site).catch((e) => {
+      console.warn("[SiteContext] Failed to persist active site:", e);
+    });
   }, []);
 
   return (

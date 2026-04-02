@@ -39,7 +39,9 @@ export function PolishedButton({
   const [opacityAnim] = useState(new Animated.Value(1));
 
   const handlePressIn = () => {
-    triggerButtonPress();
+    if (onPress) {
+      onPress();
+    }
     Animated.parallel([
       Animated.timing(scaleAnim, {
         toValue: 0.96,
@@ -154,11 +156,7 @@ export function PolishedButton({
       ]}
     >
       <Pressable
-        style={[
-          getButtonStyle(),
-          disabled && styles.disabled,
-          style,
-        ]}
+        style={[getButtonStyle(), disabled && styles.disabled, style]}
         onPress={onPress}
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -178,9 +176,7 @@ export function PolishedButton({
                 color={getIconColor()}
               />
             )}
-            {title && (
-              <Text style={[getTextStyle(), textStyle]}>{title}</Text>
-            )}
+            {title && <Text style={[getTextStyle(), textStyle]}>{title}</Text>}
           </>
         )}
       </Pressable>

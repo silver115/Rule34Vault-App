@@ -15,6 +15,7 @@ import { AppThemeProvider, useAppTheme } from "../contexts/ThemeContext";
 function SiteApiSync({ children }: { children: React.ReactNode }) {
   const { activeSite } = useSite();
   useEffect(() => {
+    console.log("[SiteApiSync] sync activeSite:", activeSite);
     setActiveSiteForApi(activeSite);
   }, [activeSite]);
   return <>{children}</>;

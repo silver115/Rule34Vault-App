@@ -2,39 +2,39 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
-    Alert,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    StyleSheet,
-    Switch,
-    Text,
-    View,
+  Alert,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  View,
 } from "react-native";
 import { FontSize, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
 import {
-    PreviewQuality,
-    QUALITY_OPTIONS,
-    ScrollMode,
-    ViewingMode,
-    useSettings,
+  PreviewQuality,
+  QUALITY_OPTIONS,
+  ScrollMode,
+  ViewingMode,
+  useSettings,
 } from "../contexts/SettingsContext";
 import { SiteName, useSite } from "../contexts/SiteContext";
 import {
-    ACCENT_COLORS,
-    AccentColor,
-    THEMES,
-    ThemeName,
-    useAppTheme,
+  ACCENT_COLORS,
+  AccentColor,
+  THEMES,
+  ThemeName,
+  useAppTheme,
 } from "../contexts/ThemeContext";
 import {
-    getNotificationPref,
-    registerForPushNotifications,
-    registerWithPushServer,
-    setNotificationPref,
-    unregisterFromPushServer,
+  getNotificationPref,
+  registerForPushNotifications,
+  registerWithPushServer,
+  setNotificationPref,
+  unregisterFromPushServer,
 } from "../utils/notifications";
 
 const THEME_KEYS = Object.keys(THEMES) as ThemeName[];
@@ -108,25 +108,44 @@ export default function SettingsScreen() {
     }
   }
 
-  function handleSiteSelect(site: SiteName) {
+  async function handleSiteSelect(site: SiteName) {
     setSiteDropdownOpen(false);
     if (site === activeSite) return;
     if (isLoggedIn) {
-      Alert.alert(
-        "Switch Site",
-        `Switching to ${site === "e621" ? "e621.net" : "Rule34Vault"} will sign you out of your current session. Continue?`,
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Switch",
-            style: "destructive",
-            onPress: () => {
-              logout();
-              setActiveSite(site);
+      if (Platform.OS === "web") {
+        if (
+          window.confirm(
+            `Switching to ${
+              site === "e621" ? "e621.net" : "Rule34Vault"
+            } will sign you out of your current session. Continue?`,
+          )
+        ) {
+          try {
+            await logout();
+          } catch {}
+          setActiveSite(site);
+        }
+      } else {
+        Alert.alert(
+          "Switch Site",
+          `Switching to ${
+            site === "e621" ? "e621.net" : "Rule34Vault"
+          } will sign you out of your current session. Continue?`,
+          [
+            { text: "Cancel", style: "cancel" },
+            {
+              text: "Switch",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  await logout();
+                } catch {}
+                setActiveSite(site);
+              },
             },
-          },
-        ],
-      );
+          ],
+        );
+      }
     } else {
       setActiveSite(site);
     }

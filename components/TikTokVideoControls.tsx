@@ -1,7 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ResizeMode, Video } from "expo-av";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Animated, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+    Animated,
+    Platform,
+    Pressable,
+    StyleSheet,
+    Text,
+    View,
+} from "react-native";
 import { Colors } from "../constants/theme";
 
 interface TikTokVideoControlsProps {
@@ -38,7 +45,7 @@ export function TikTokVideoControls({
   const [duration, setDuration] = useState(0);
   const [mediaError, setMediaError] = useState(false);
   const [showControls, setShowControls] = useState(false);
-  const controlsTimeoutRef = useRef<number>();
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const trackWidthRef = useRef(300);
 
   const fmt = (ms: number) => {
@@ -49,15 +56,18 @@ export function TikTokVideoControls({
 
   const progress = duration > 0 ? (position / duration) * 100 : 0;
 
-  const handleSeek = useCallback((frac: number) => {
-    const seekTo = Math.max(0, Math.min(1, frac)) * duration;
-    if (Platform.OS === "web" && webVideoRef.current) {
-      webVideoRef.current.currentTime = seekTo / 1000;
-      setPosition(seekTo);
-    } else if (videoRef.current) {
-      videoRef.current.setPositionAsync(seekTo);
-    }
-  }, [duration]);
+  const handleSeek = useCallback(
+    (frac: number) => {
+      const seekTo = Math.max(0, Math.min(1, frac)) * duration;
+      if (Platform.OS === "web" && webVideoRef.current) {
+        webVideoRef.current.currentTime = seekTo / 1000;
+        setPosition(seekTo);
+      } else if (videoRef.current) {
+        videoRef.current.setPositionAsync(seekTo);
+      }
+    },
+    [duration],
+  );
 
   const togglePlay = useCallback(() => {
     if (mediaError) return;
@@ -106,13 +116,16 @@ export function TikTokVideoControls({
       setPosition(webVideoRef.current.currentTime * 1000);
       setDuration(webVideoRef.current.duration * 1000);
     } else if (videoRef.current) {
-      videoRef.current.getStatusAsync().then((status: any) => {
-        setPosition(status.positionMillis || 0);
-        setDuration(status.durationMillis || 0);
-        if (status.isLoaded && !mediaError) {
-          onVideoSuccess?.();
-        }
-      }).catch(() => {});
+      videoRef.current
+        .getStatusAsync()
+        .then((status: any) => {
+          setPosition(status.positionMillis || 0);
+          setDuration(status.durationMillis || 0);
+          if (status.isLoaded && !mediaError) {
+            onVideoSuccess?.();
+          }
+        })
+        .catch(() => {});
     }
   }, [mediaError, onVideoSuccess]);
 
@@ -122,7 +135,14 @@ export function TikTokVideoControls({
   }, [updateStatus]);
 
   return (
-    <View style={{ width: screenW, height: displayH, backgroundColor: "#000", position: "relative" }}>
+    <View
+      style={{
+        width: screenW,
+        height: displayH,
+        backgroundColor: "#000",
+        position: "relative",
+      }}
+    >
       {mediaError ? (
         <View style={styles.errorBox}>
           <Ionicons name="alert-circle-outline" size={48} color="#666" />
@@ -132,10 +152,17 @@ export function TikTokVideoControls({
         <>
           {Platform.OS === "web" ? (
             <video
-              ref={(el: HTMLVideoElement | null) => { webVideoRef.current = el; }}
+              ref={(el: HTMLVideoElement | null) => {
+                webVideoRef.current = el;
+              }}
               src={mediaUrl}
               poster={videoPosterUrl}
-              style={{ width: screenW, height: displayH, objectFit: "contain", backgroundColor: "#000" }}
+              style={{
+                width: screenW,
+                height: displayH,
+                objectFit: "contain",
+                backgroundColor: "#000",
+              }}
               muted={isMuted}
               playsInline
               onLoadedMetadata={onVideoSuccess}
@@ -161,32 +188,55 @@ export function TikTokVideoControls({
           {(!isPlaying || showControls) && (
             <Animated.View style={styles.controlsOverlay}>
               <Pressable style={styles.centreBtn} onPress={togglePlay}>
-                <Ionicons name={isPlaying ? "pause" : "play"} size={44} color="white" />
+                <Ionicons
+                  name={isPlaying ? "pause" : "play"}
+                  size={44}
+                  color="white"
+                />
               </Pressable>
             </Animated.View>
           )}
 
           {/* Bottom player bar */}
-          <View style={[styles.playerBar, { bottom: 8 }]} pointerEvents="box-none">
+          <View
+            style={[styles.playerBar, { bottom: 8 }]}
+            pointerEvents="box-none"
+          >
             <View style={styles.scrubRow} pointerEvents="box-none">
               <Text style={styles.timeText}>{fmt(position)}</Text>
               <View
                 style={styles.scrubTrack}
-                onLayout={(e) => { trackWidthRef.current = e.nativeEvent.layout.width || 300; }}
+                onLayout={(e) => {
+                  trackWidthRef.current = e.nativeEvent.layout.width || 300;
+                }}
               >
                 <View style={[styles.scrubFill, { width: `${progress}%` }]} />
                 <View
                   style={styles.scrubHitArea}
                   onStartShouldSetResponder={() => true}
                   onMoveShouldSetResponder={() => true}
-                  onResponderGrant={(e) => handleSeek(e.nativeEvent.locationX / trackWidthRef.current)}
-                  onResponderMove={(e) => handleSeek(e.nativeEvent.locationX / trackWidthRef.current)}
-                  onResponderRelease={(e) => handleSeek(e.nativeEvent.locationX / trackWidthRef.current)}
+                  onResponderGrant={(e) =>
+                    handleSeek(e.nativeEvent.locationX / trackWidthRef.current)
+                  }
+                  onResponderMove={(e) =>
+                    handleSeek(e.nativeEvent.locationX / trackWidthRef.current)
+                  }
+                  onResponderRelease={(e) =>
+                    handleSeek(e.nativeEvent.locationX / trackWidthRef.current)
+                  }
                 />
               </View>
               <Text style={styles.timeText}>{fmt(duration)}</Text>
-              <Pressable onPress={onToggleMute} style={styles.muteBtn} hitSlop={8}>
-                <Ionicons name={isMuted ? "volume-mute" : "volume-high"} size={18} color="white" />
+              <Pressable
+                onPress={onToggleMute}
+                style={styles.muteBtn}
+                hitSlop={8}
+              >
+                <Ionicons
+                  name={isMuted ? "volume-mute" : "volume-high"}
+                  size={18}
+                  color="white"
+                />
               </Pressable>
             </View>
           </View>
