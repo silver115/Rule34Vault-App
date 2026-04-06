@@ -11,7 +11,7 @@ import {
     View,
 } from "react-native";
 import e621Api from "../../api/e621";
-import api, { Post } from "../../api/rule34vault";
+import api, { Post, Tag } from "../../api/rule34vault";
 import { PostGrid } from "../../components/PostGrid";
 import { TikTokFeed } from "../../components/TikTokFeed";
 import { FontSize, Radius, Spacing } from "../../constants/theme";
@@ -43,6 +43,7 @@ export default function ForYouScreen() {
   const [topTags, setTopTags] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [blacklist, setBlacklist] = useState<Tag[]>([]);
 
   const cursorRef = useRef<string | null>(null);
   const seenIdsRef = useRef<Set<number>>(new Set());
@@ -111,6 +112,10 @@ export default function ForYouScreen() {
           if (serverResult && serverResult.posts.length > 0) {
             items = serverResult.posts;
             tags = serverResult.topTags;
+            // Filter server results by quality (100+ favs) for e621
+            if (isE621) {
+              items = items.filter((p) => (p.likes ?? 0) >= 100);
+            }
           }
         }
 
@@ -127,6 +132,20 @@ export default function ForYouScreen() {
         }
 
         items.forEach((p) => seenIdsRef.current.add(p.id));
+        // Apply quality filter for e621 (100+ favs)
+        if (isE621) {
+          items = items.filter((p) => (p.likes ?? 0) >= 100);
+        }
+        // Apply blacklist filter
+        if (blacklist.length > 0) {
+          const blacklistSet = new Set(
+            blacklist.map((t) => t.value.toLowerCase()),
+          );
+          items = items.filter((p) => {
+            const postTags = p.tags?.map((t) => t.value.toLowerCase()) ?? [];
+            return !postTags.some((tag) => blacklistSet.has(tag));
+          });
+        }
         // More lenient stopping conditions - only stop if we get very few items
         hasMoreRef.current = usingServer
           ? items.length > 0
@@ -148,7 +167,7 @@ export default function ForYouScreen() {
         loadingRef.current = false;
       }
     },
-    [isLoggedIn, user, token, usingServer, activeSite],
+    [isLoggedIn, user, token, usingServer, activeSite, blacklist],
   );
 
   useEffect(() => {
@@ -156,6 +175,22 @@ export default function ForYouScreen() {
       load(true);
     }
   }, [isLoggedIn, user?.id, activeSite]);
+
+  // Fetch blacklist when logged in or site changes
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setBlacklist([]);
+      return;
+    }
+    activeApi
+      .getTagBlacklist()
+      .then((bl) => {
+        if (bl?.tags) setBlacklist(bl.tags);
+      })
+      .catch(() => {
+        setBlacklist([]);
+      });
+  }, [isLoggedIn, activeSite]);
 
   if (!isLoggedIn) {
     return (

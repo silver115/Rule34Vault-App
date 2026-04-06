@@ -2,7 +2,13 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+    useCallback,
+    useEffect,
+    useMemo,
+    useRef,
+    useState,
+} from "react";
 import {
     ActivityIndicator,
     FlatList,
@@ -14,26 +20,33 @@ import {
     StyleSheet,
     Text,
     useWindowDimensions,
-    View
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import api, {
-    getMediaUrl,
     Post,
     PostActionState,
     SearchFilters,
     Tag,
-    TAG_TYPE
+    TAG_TYPE,
 } from "../../api/rule34vault";
 import { FilterBar } from "../../components/FilterBar";
 import { TagChip } from "../../components/TagChip";
 import { TikTokVideoControls } from "../../components/TikTokVideoControls";
 import { ZoomableImage } from "../../components/ZoomableImage";
-import { Colors, FontSize, getTagColor, Radius, Spacing } from "../../constants/theme";
+import {
+    Colors,
+    FontSize,
+    getTagColor,
+    Radius,
+    Spacing,
+} from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { usePostList } from "../../contexts/PostListContext";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useSite } from "../../contexts/SiteContext";
 import { downloadMedia } from "../../utils/download";
+import { getSiteMediaUrl } from "../../utils/media";
 import { sendRecSignal, sendViewDuration } from "../../utils/recommendations";
 
 const PREFETCH_COUNT = 5;
@@ -59,7 +72,9 @@ export default function PostDetailScreen() {
 
   // Track which page is currently visible
   const [activePostId, setActivePostId] = useState(startId);
-  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
+  const viewabilityConfig = useRef({
+    viewAreaCoveragePercentThreshold: 50,
+  }).current;
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
       setActivePostId(viewableItems[0].item);
@@ -75,18 +90,24 @@ export default function PostDetailScreen() {
   useEffect(() => {
     const currentIdx = postIds.indexOf(activePostId);
     if (currentIdx < 0) return;
-    const upcoming = postIds.slice(currentIdx + 1, currentIdx + 1 + PREFETCH_COUNT);
+    const upcoming = postIds.slice(
+      currentIdx + 1,
+      currentIdx + 1 + PREFETCH_COUNT,
+    );
     upcoming.forEach((pid) => {
-      api.getPost(pid).then((post) => {
-        if (Platform.OS !== "web") {
-          // Always prefetch thumbnail
-          Image.prefetch(getMediaUrl(post, "thumb")).catch(() => {});
-          // Only prefetch full image if quality setting requires it and it's an image
-          if (qualityOption.detailVariant === "full" && post.type === 0) {
-            Image.prefetch(getMediaUrl(post, "full")).catch(() => {});
+      api
+        .getPost(pid)
+        .then((post) => {
+          if (Platform.OS !== "web") {
+            // Always prefetch thumbnail
+            Image.prefetch(getSiteMediaUrl(post, "thumb")).catch(() => {});
+            // Only prefetch full image if quality setting requires it and it's an image
+            if (qualityOption.detailVariant === "full" && post.type === 0) {
+              Image.prefetch(getSiteMediaUrl(post, "full")).catch(() => {});
+            }
           }
-        }
-      }).catch(() => {});
+        })
+        .catch(() => {});
     });
   }, [activePostId, postIds, qualityOption]);
 
@@ -109,7 +130,16 @@ export default function PostDetailScreen() {
         />
       </View>
     ),
-    [SCREEN_W, SCREEN_H, mediaH, insets.top, activePostId, isMuted, toggleMute, postIds]
+    [
+      SCREEN_W,
+      SCREEN_H,
+      mediaH,
+      insets.top,
+      activePostId,
+      isMuted,
+      toggleMute,
+      postIds,
+    ],
   );
 
   return (
@@ -136,7 +166,10 @@ export default function PostDetailScreen() {
         viewabilityConfig={viewabilityConfig}
       />
       {/* Back button overlay */}
-      <Pressable style={[styles.backBtn, { top: insets.top + 8 }]} onPress={() => router.back()}>
+      <Pressable
+        style={[styles.backBtn, { top: insets.top + 8 }]}
+        onPress={() => router.back()}
+      >
         <Ionicons name="arrow-back" size={24} color="#fff" />
       </Pressable>
     </View>
@@ -164,14 +197,22 @@ function PostPage({
   onToggleMute: () => void;
   postIds: number[];
 }) {
-  const { isLoggedIn, token } = useAuth();
+  const { user, isLoggedIn, token } = useAuth();
+  const { isE621 } = useSite();
   const { qualityOption } = useSettings();
-  const { actionStates: ctxActionStates, updateActionState: ctxUpdateActionState } = usePostList();
+  const {
+    actionStates: ctxActionStates,
+    updateActionState: ctxUpdateActionState,
+  } = usePostList();
   const router = useRouter();
   const [post, setPost] = useState<Post | null>(null);
   // Seed from context cache if already known (e.g. came from grid/TikTok view)
   const [actionState, setActionState] = useState<PostActionState>(
-    ctxActionStates[postId] ?? { isLiked: false, isBookmarked: false, isSuperLiked: false }
+    ctxActionStates[postId] ?? {
+      isLiked: false,
+      isBookmarked: false,
+      isSuperLiked: false,
+    },
   );
   const [isLoading, setIsLoading] = useState(true);
   const [mediaError, setMediaError] = useState(false);
@@ -185,7 +226,9 @@ function PostPage({
   const webVideoRef = useRef<HTMLVideoElement | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const [mediaRetryCount, setMediaRetryCount] = useState(0);
-  const [mediaLoadingState, setMediaLoadingState] = useState<'loading' | 'loaded' | 'failed'>('loading');
+  const [mediaLoadingState, setMediaLoadingState] = useState<
+    "loading" | "loaded" | "failed"
+  >("loading");
   const MAX_RETRIES = 2;
   const MEDIA_TIMEOUT = 15000; // 15 seconds
 
@@ -196,15 +239,20 @@ function PostPage({
   // Optimized media URL generation
   const mediaUrl = useMemo(() => {
     if (!post) return "";
-    return getMediaUrl(post, "full", true);  // Use CDN URL
+    return getSiteMediaUrl(post, "full");
   }, [post]);
 
   // Media loading timeout and retry logic
   useEffect(() => {
-    if (!post || mediaLoadingState === 'loaded' || mediaLoadingState === 'failed') return;
+    if (
+      !post ||
+      mediaLoadingState === "loaded" ||
+      mediaLoadingState === "failed"
+    )
+      return;
 
     const timeout = setTimeout(() => {
-      if (mediaLoadingState === 'loading') {
+      if (mediaLoadingState === "loading") {
         handleMediaFailure();
       }
     }, MEDIA_TIMEOUT);
@@ -216,52 +264,52 @@ function PostPage({
     if (mediaRetryCount < MAX_RETRIES) {
       const delay = 1000 * Math.pow(2, mediaRetryCount);
       setTimeout(() => {
-        setMediaRetryCount(prev => prev + 1);
-        setMediaLoadingState('loading');
+        setMediaRetryCount((prev) => prev + 1);
+        setMediaLoadingState("loading");
         setMediaError(false);
       }, delay);
     } else {
-      setMediaLoadingState('failed');
+      setMediaLoadingState("failed");
     }
   }, [mediaRetryCount]);
 
   const handleMediaSuccess = useCallback(() => {
-    setMediaLoadingState('loaded');
+    setMediaLoadingState("loaded");
     setMediaRetryCount(0);
   }, []);
 
   // Apply filters to similar posts
   const filteredSimilarPosts = useMemo(() => {
     let filtered = [...similarPosts];
-    
+
     // Filter by type
     if (filters.type != null) {
-      filtered = filtered.filter(p => p.type === filters.type);
+      filtered = filtered.filter((p) => p.type === filters.type);
     }
-    
+
     // Filter by hot range (postedFromDays)
     if (filters.postedFromDays != null && filters.postedFromDays > 0) {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - filters.postedFromDays);
-      filtered = filtered.filter(p => {
+      filtered = filtered.filter((p) => {
         const postDate = new Date(p.created);
         return postDate >= cutoffDate;
       });
     }
     // Note: 999 (All Time) and -1 (Default) don't need time filtering
-    
+
     return filtered;
   }, [similarPosts, filters]);
 
   const thumbUrl = useMemo(() => {
     if (!post) return "";
-    return getMediaUrl(post, "thumb", true);
+    return getSiteMediaUrl(post, "thumb");
   }, [post]);
 
   // Video poster URL with 3-second timestamp (for web)
   const videoPosterUrl = useMemo(() => {
     if (!post || post.type !== 1) return "";
-    const baseUrl = getMediaUrl(post, "full", true);
+    const baseUrl = getSiteMediaUrl(post, "full");
     // Add #t=3 to seek to 3 seconds for poster
     return `${baseUrl}#t=3`;
   }, [post]);
@@ -270,30 +318,36 @@ function PostPage({
   useEffect(() => {
     if (Platform.OS !== "web") return;
     if (!isActive || !post || post.type !== 1) return;
-    
+
     const currentIndex = postIds.indexOf(post.id);
-    const nextIds = [
-      postIds[currentIndex - 1],
-      postIds[currentIndex + 1],
-    ].filter(Boolean).slice(0, 2);
+    const nextIds = [postIds[currentIndex - 1], postIds[currentIndex + 1]]
+      .filter(Boolean)
+      .slice(0, 2);
 
     const links: HTMLLinkElement[] = [];
-    nextIds.forEach(id => {
-      const link = document.createElement('link');
-      link.rel = 'preload';
-      link.as = 'image';
-      link.href = getMediaUrl({ id, type: 1 } as any, 'thumb', true);
+    nextIds.forEach((id) => {
+      const link = document.createElement("link");
+      link.rel = "preload";
+      link.as = "image";
+      link.href = getSiteMediaUrl({ id, type: 1 } as any, "thumb");
       document.head.appendChild(link);
       links.push(link);
     });
-    return () => { links.forEach(l => l.parentNode?.removeChild(l)); };
+    return () => {
+      links.forEach((l) => l.parentNode?.removeChild(l));
+    };
   }, [isActive, post, postIds]);
 
   useEffect(() => {
     if (isActive) {
       viewStartRef.current = Date.now();
       sentDurationRef.current = false;
-    } else if (viewStartRef.current > 0 && !sentDurationRef.current && token && post) {
+    } else if (
+      viewStartRef.current > 0 &&
+      !sentDurationRef.current &&
+      token &&
+      post
+    ) {
       const durationSec = (Date.now() - viewStartRef.current) / 1000;
       sentDurationRef.current = true;
       sendViewDuration(token, postId, durationSec, post.tags);
@@ -311,7 +365,12 @@ function PostPage({
   // Send view duration on unmount
   useEffect(() => {
     return () => {
-      if (viewStartRef.current > 0 && !sentDurationRef.current && token && post) {
+      if (
+        viewStartRef.current > 0 &&
+        !sentDurationRef.current &&
+        token &&
+        post
+      ) {
         const durationSec = (Date.now() - viewStartRef.current) / 1000;
         sendViewDuration(token, postId, durationSec, post.tags);
       }
@@ -360,40 +419,46 @@ function PostPage({
   // Web: capture mouse wheel to scroll the nested ScrollView
   useEffect(() => {
     if (Platform.OS !== "web") return;
-    
+
     const handler = (e: Event) => {
       const wheelEvent = e as WheelEvent;
       wheelEvent.preventDefault();
       wheelEvent.stopPropagation();
-      
-        // Try to find a scrollable element
+
+      // Try to find a scrollable element
       let scrolled = false;
-      
+
       // Method 1: Try any element with scrollable content
-      const elements = document.querySelectorAll('*');
+      const elements = document.querySelectorAll("*");
       for (let i = 0; i < elements.length; i++) {
         const element = elements[i] as HTMLElement;
         if (element.scrollHeight > element.clientHeight) {
           const oldScrollTop = element.scrollTop;
           element.scrollTop += wheelEvent.deltaY;
-          
+
           if (element.scrollTop !== oldScrollTop) {
             scrolled = true;
             break;
           }
         }
       }
-      
+
       // Method 2: Fallback to window scroll
       if (!scrolled) {
         window.scrollBy(0, wheelEvent.deltaY);
       }
     };
-    
+
     // Add event listeners for web only
-    window.addEventListener("wheel", handler, { passive: false, capture: true });
-    document.addEventListener("wheel", handler, { passive: false, capture: true });
-    
+    window.addEventListener("wheel", handler, {
+      passive: false,
+      capture: true,
+    });
+    document.addEventListener("wheel", handler, {
+      passive: false,
+      capture: true,
+    });
+
     return () => {
       window.removeEventListener("wheel", handler, { capture: true } as any);
       document.removeEventListener("wheel", handler, { capture: true } as any);
@@ -434,8 +499,14 @@ function PostPage({
             // Retry once after a short delay
             setTimeout(() => {
               if (!cancelled && isLoggedIn) {
-                api.getPostActionState(postId)
-                  .then((retryState) => { if (!cancelled) { setActionState(retryState); ctxUpdateActionState(postId, retryState); } })
+                api
+                  .getPostActionState(postId)
+                  .then((retryState) => {
+                    if (!cancelled) {
+                      setActionState(retryState);
+                      ctxUpdateActionState(postId, retryState);
+                    }
+                  })
                   .catch(() => {});
               }
             }, 1000);
@@ -445,47 +516,65 @@ function PostPage({
       } catch {}
       if (!cancelled) setIsLoading(false);
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [postId, isLoggedIn]);
 
   // Fetch similar posts once post data is available
   useEffect(() => {
     if (!post) return;
     let cancelled = false;
-    api.searchSimilarPosts(post, 5).then((similar) => {
-      if (!cancelled) setSimilarPosts(similar);
-    }).catch(() => {});
-    return () => { cancelled = true; };
+    api
+      .searchSimilarPosts(post, 5)
+      .then((similar) => {
+        if (!cancelled) setSimilarPosts(similar);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, [post?.id]);
 
   // Helper: update both local state and shared context
-  const applyActionState = useCallback((next: PostActionState) => {
-    setActionState(next);
-    ctxUpdateActionState(postId, next);
-  }, [postId, ctxUpdateActionState]);
+  const applyActionState = useCallback(
+    (next: PostActionState) => {
+      setActionState(next);
+      ctxUpdateActionState(postId, next);
+    },
+    [postId, ctxUpdateActionState],
+  );
 
   async function toggleLike() {
     if (!isLoggedIn) return;
-    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== "web")
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       if (actionState.isLiked) {
         await api.unlikePost(postId);
-        applyActionState({ ...actionState, isLiked: false, isSuperLiked: false });
+        applyActionState({
+          ...actionState,
+          isLiked: false,
+          isSuperLiked: false,
+        });
       } else {
         await api.likePost(postId);
         applyActionState({ ...actionState, isLiked: true });
-        if (token && post?.tags) sendRecSignal(token, postId, "like", post.tags);
+        if (token && post?.tags)
+          sendRecSignal(token, postId, "like", post.tags);
       }
     } catch {}
   }
 
   async function handleSuperLike() {
     if (!isLoggedIn || actionState.isSuperLiked) return;
-    if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (Platform.OS !== "web")
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     try {
       await api.superLikePost(postId);
       applyActionState({ ...actionState, isLiked: true, isSuperLiked: true });
-      if (token && post?.tags) sendRecSignal(token, postId, "super_like", post.tags);
+      if (token && post?.tags)
+        sendRecSignal(token, postId, "super_like", post.tags);
     } catch {}
   }
 
@@ -498,7 +587,8 @@ function PostPage({
       } else {
         await api.bookmarkPost(postId);
         applyActionState({ ...actionState, isBookmarked: true });
-        if (token && post?.tags) sendRecSignal(token, postId, "bookmark", post.tags);
+        if (token && post?.tags)
+          sendRecSignal(token, postId, "bookmark", post.tags);
       }
     } catch {}
   }
@@ -510,7 +600,8 @@ function PostPage({
       setActionStateLoading(true);
       const state = await api.getPostActionState(postId);
       setActionState(state);
-    } catch {} finally {
+    } catch {
+    } finally {
       setActionStateLoading(false);
     }
   }
@@ -526,15 +617,18 @@ function PostPage({
   // For videos: use safe-area-aware height so controls stay tappable and video fits perfectly
   // For images: use full screen height for max viewing area
   const isVideo = post.type === 1;
-  const isTallImage = !isVideo && post.width > 0 && (post.height / post.width) > 2.0;
-  const naturalComicHeight = isTallImage ? Math.round(screenW * (post.height / post.width)) : screenH;
+  const isTallImage =
+    !isVideo && post.width > 0 && post.height / post.width > 2.0;
+  const naturalComicHeight = isTallImage
+    ? Math.round(screenW * (post.height / post.width))
+    : screenH;
   // Dynamic video height that accounts for safe areas and ensures no cutoff
-  const videoHeight = isVideo 
-    ? screenH - (Platform.OS === 'ios' ? topInset * 2 : 0) - 20 // Account for top and bottom safe areas
+  const videoHeight = isVideo
+    ? screenH - (Platform.OS === "ios" ? topInset * 2 : 0) - 20 // Account for top and bottom safe areas
     : screenH;
   const displayH = isVideo ? videoHeight : screenH;
 
-  const fullUrl = getMediaUrl(post, "full");
+  const fullUrl = getSiteMediaUrl(post, "full");
 
   const tagsByType: Record<string, Tag[]> = {};
   (post.tags ?? []).forEach((t) => {
@@ -542,7 +636,14 @@ function PostPage({
     if (!tagsByType[cat]) tagsByType[cat] = [];
     tagsByType[cat].push(t);
   });
-  const tagOrder = ["artist", "copyright", "character", "general", "meta", "other"];
+  const tagOrder = [
+    "artist",
+    "copyright",
+    "character",
+    "general",
+    "meta",
+    "other",
+  ];
   const sources = post.data?.sources ?? [];
 
   return (
@@ -555,19 +656,31 @@ function PostPage({
       scrollEventThrottle={16}
     >
       {/* Full-screen media */}
-      <View style={{ width: screenW, height: screenH, backgroundColor: "#000", paddingTop: isVideo ? topInset : 0 }}>
+      <View
+        style={{
+          width: screenW,
+          height: screenH,
+          backgroundColor: "#000",
+          paddingTop: isVideo ? topInset : 0,
+        }}
+      >
         {mediaError ? (
           <View style={[styles.center, { height: displayH }]}>
             <Ionicons name="alert-circle-outline" size={48} color="#666" />
             <Text style={{ color: "#888", marginTop: 8, fontSize: 14 }}>
-              {mediaLoadingState === 'failed' 
-                ? `Failed to load media after ${MAX_RETRIES} attempts` 
-                : `Loading media... (Attempt ${mediaRetryCount + 1}/${MAX_RETRIES + 1})`
-              }
+              {mediaLoadingState === "failed"
+                ? `Failed to load media after ${MAX_RETRIES} attempts`
+                : `Loading media... (Attempt ${mediaRetryCount + 1}/${MAX_RETRIES + 1})`}
             </Text>
-            {mediaLoadingState === 'failed' ? (
+            {mediaLoadingState === "failed" ? (
               <Pressable
-                style={{ marginTop: 12, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.1)" }}
+                style={{
+                  marginTop: 12,
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 8,
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                }}
                 onPress={() => {
                   if (postIds.length > 1) {
                     const currentIndex = postIds.indexOf(post!.id);
@@ -616,10 +729,16 @@ function PostPage({
               uri={mediaUrl}
               width={screenW}
               height={screenH}
-              onError={() => { setMediaError(true); handleMediaFailure(); }}
+              onError={() => {
+                setMediaError(true);
+                handleMediaFailure();
+              }}
               onLoad={handleMediaSuccess}
             />
-            <Pressable style={styles.comicExpandBtn} onPress={() => setComicOpen(true)}>
+            <Pressable
+              style={styles.comicExpandBtn}
+              onPress={() => setComicOpen(true)}
+            >
               <Ionicons name="expand-outline" size={20} color="#fff" />
               <Text style={styles.comicExpandText}>Read</Text>
             </Pressable>
@@ -629,7 +748,10 @@ function PostPage({
             uri={mediaUrl}
             width={screenW}
             height={screenH}
-            onError={() => { setMediaError(true); handleMediaFailure(); }}
+            onError={() => {
+              setMediaError(true);
+              handleMediaFailure();
+            }}
             onLoad={handleMediaSuccess}
           />
         )}
@@ -637,9 +759,15 @@ function PostPage({
         {/* Scroll hint at bottom — positioned above video controls */}
         {!mediaError && (
           <View style={[styles.scrollHint, isVideo && { bottom: 60 }]}>
-            <Ionicons name="chevron-up" size={20} color="rgba(255,255,255,0.6)" />
+            <Ionicons
+              name="chevron-up"
+              size={20}
+              color="rgba(255,255,255,0.6)"
+            />
             <Text style={styles.scrollHintText}>
-              {Platform.OS === "web" ? "Scroll down for details" : "Swipe up for details"}
+              {Platform.OS === "web"
+                ? "Scroll down for details"
+                : "Swipe up for details"}
             </Text>
           </View>
         )}
@@ -650,24 +778,62 @@ function PostPage({
         {/* Action bar */}
         <View style={styles.actionBar}>
           <ActionButton
-            icon={actionState.isSuperLiked ? "heart-circle" : actionState.isLiked ? "heart" : "heart-outline"}
-            color={actionState.isSuperLiked ? "#FFD700" : actionState.isLiked ? Colors.likeFilled : Colors.textSecondary}
+            icon={
+              actionState.isSuperLiked
+                ? "heart-circle"
+                : actionState.isLiked
+                  ? "heart"
+                  : "heart-outline"
+            }
+            color={
+              actionState.isSuperLiked
+                ? "#FFD700"
+                : actionState.isLiked
+                  ? Colors.likeFilled
+                  : Colors.textSecondary
+            }
             label={post.likes != null ? String(post.likes) : "Like"}
             onPress={toggleLike}
             onLongPress={handleSuperLike}
           />
-          <ActionButton
-            icon={actionState.isBookmarked ? "bookmark" : "bookmark-outline"}
-            color={actionState.isBookmarked ? Colors.bookmarkFilled : Colors.textSecondary}
-            label="Save"
-            onPress={toggleBookmark}
-          />
-          <ActionButton
-            icon={actionStateLoading ? "sync-outline" : "refresh-outline"}
-            color={Colors.textSecondary}
-            label={actionStateLoading ? "Loading" : "Refresh"}
-            onPress={refreshActionState}
-          />
+          {!isE621 && (
+            <ActionButton
+              icon={actionState.isBookmarked ? "bookmark" : "bookmark-outline"}
+              color={
+                actionState.isBookmarked
+                  ? Colors.bookmarkFilled
+                  : Colors.textSecondary
+              }
+              label="Save"
+              onPress={toggleBookmark}
+            />
+          )}
+          {isE621 && (
+            <>
+              <ActionButton
+                icon="arrow-up-circle-outline"
+                color={Colors.textSecondary}
+                label={`${(post as any)?._e621Score?.up ?? 0}`}
+                onPress={async () => {
+                  if (!isLoggedIn) return;
+                  try {
+                    await api.votePost(post.id, 1);
+                  } catch {}
+                }}
+              />
+              <ActionButton
+                icon="arrow-down-circle-outline"
+                color={Colors.textSecondary}
+                label={`${(post as any)?._e621Score?.down ?? 0}`}
+                onPress={async () => {
+                  if (!isLoggedIn) return;
+                  try {
+                    await api.votePost(post.id, -1);
+                  } catch {}
+                }}
+              />
+            </>
+          )}
           <ActionButton
             icon="download-outline"
             color={Colors.textSecondary}
@@ -681,7 +847,13 @@ function PostPage({
             icon="share-outline"
             color={Colors.textSecondary}
             label="Share"
-            onPress={() => Linking.openURL(`https://rule34vault.com/post/${postId}`)}
+            onPress={() =>
+              Linking.openURL(
+                isE621
+                  ? `https://e621.net/posts/${postId}`
+                  : `https://rule34vault.com/post/${postId}`,
+              )
+            }
           />
         </View>
 
@@ -697,7 +869,9 @@ function PostPage({
           </View>
           <View style={styles.infoRow}>
             <Text style={styles.infoLabel}>Size</Text>
-            <Text style={styles.infoValue}>{post.width} × {post.height}</Text>
+            <Text style={styles.infoValue}>
+              {post.width} × {post.height}
+            </Text>
           </View>
           {post.duration != null && (
             <View style={styles.infoRow}>
@@ -713,13 +887,123 @@ function PostPage({
           </View>
         </View>
 
+        {/* e621 Relationships (parent/children/pools) */}
+        {isE621 &&
+          (() => {
+            const rels = (post as any)?._e621Relationships;
+            const pools: number[] = (post as any)?._e621Pools ?? [];
+            const hasRels =
+              rels?.parentId || rels?.children?.length > 0 || pools.length > 0;
+            if (!hasRels) return null;
+            return (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Relationships</Text>
+                <View
+                  style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}
+                >
+                  {rels?.parentId && (
+                    <Pressable
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        backgroundColor: "#2a4a5e",
+                      }}
+                      onPress={() => router.push(`/post/${rels.parentId}`)}
+                    >
+                      <Ionicons name="arrow-up" size={14} color="#7ec8e3" />
+                      <Text
+                        style={{
+                          color: "#7ec8e3",
+                          fontSize: 12,
+                          fontWeight: "600",
+                        }}
+                      >
+                        Parent #{rels.parentId}
+                      </Text>
+                    </Pressable>
+                  )}
+                  {rels?.children?.length > 0 && (
+                    <Pressable
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        backgroundColor: "#2a4a3e",
+                      }}
+                      onPress={() => {
+                        if (rels.children.length === 1) {
+                          router.push(`/post/${rels.children[0]}`);
+                        }
+                      }}
+                    >
+                      <Ionicons
+                        name="git-branch-outline"
+                        size={14}
+                        color="#7ee3a0"
+                      />
+                      <Text
+                        style={{
+                          color: "#7ee3a0",
+                          fontSize: 12,
+                          fontWeight: "600",
+                        }}
+                      >
+                        {rels.children.length}{" "}
+                        {rels.children.length === 1 ? "Child" : "Children"}
+                      </Text>
+                    </Pressable>
+                  )}
+                  {pools.map((poolId: number) => (
+                    <Pressable
+                      key={poolId}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 10,
+                        paddingVertical: 6,
+                        borderRadius: 8,
+                        backgroundColor: "#3a2a5e",
+                      }}
+                      onPress={() => router.push(`/playlist/${poolId}`)}
+                    >
+                      <Ionicons
+                        name="albums-outline"
+                        size={14}
+                        color="#b07ee3"
+                      />
+                      <Text
+                        style={{
+                          color: "#b07ee3",
+                          fontSize: 12,
+                          fontWeight: "600",
+                        }}
+                      >
+                        Pool #{poolId}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            );
+          })()}
+
         {/* Sources */}
         {sources.length > 0 && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Sources</Text>
             {sources.map((src, i) => (
               <Pressable key={i} onPress={() => Linking.openURL(src)}>
-                <Text style={styles.sourceLink} numberOfLines={1}>{src}</Text>
+                <Text style={styles.sourceLink} numberOfLines={1}>
+                  {src}
+                </Text>
               </Pressable>
             ))}
           </View>
@@ -733,7 +1017,12 @@ function PostPage({
             if (!catTags || catTags.length === 0) return null;
             return (
               <View key={cat} style={styles.tagGroup}>
-                <Text style={[styles.tagGroupLabel, { color: getTagColor(catTags[0].type) }]}>
+                <Text
+                  style={[
+                    styles.tagGroupLabel,
+                    { color: getTagColor(catTags[0].type) },
+                  ]}
+                >
                   {cat.charAt(0).toUpperCase() + cat.slice(1)}
                 </Text>
                 <View style={styles.tagList}>
@@ -764,10 +1053,15 @@ function PostPage({
                 <Pressable
                   key={sp.id}
                   style={styles.similarCard}
-                  onPress={() => router.push({ pathname: "/post/[id]", params: { id: String(sp.id) } })}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/post/[id]",
+                      params: { id: String(sp.id) },
+                    })
+                  }
                 >
                   <Image
-                    source={{ uri: getMediaUrl(sp, "thumb") }}
+                    source={{ uri: getSiteMediaUrl(sp, "thumb") }}
                     style={styles.similarThumb}
                     contentFit="cover"
                     transition={200}
@@ -778,14 +1072,20 @@ function PostPage({
                     </View>
                   )}
                   <Text style={styles.similarLikes} numberOfLines={1}>
-                    <Ionicons name="heart" size={10} color={Colors.like} /> {sp.likes ?? 0}
+                    <Ionicons name="heart" size={10} color={Colors.like} />{" "}
+                    {sp.likes ?? 0}
                   </Text>
                 </Pressable>
               ))}
             </ScrollView>
             <Pressable
               style={styles.viewMoreBtn}
-              onPress={() => router.push({ pathname: "/similar-posts", params: { postId: String(post.id) } })}
+              onPress={() =>
+                router.push({
+                  pathname: "/similar-posts",
+                  params: { postId: String(post.id) },
+                })
+              }
             >
               <Text style={styles.viewMoreText}>View More</Text>
               <Ionicons name="arrow-forward" size={16} color={Colors.accent} />
@@ -808,13 +1108,28 @@ function PostPage({
           <View style={styles.comicModal}>
             <View style={styles.comicHeader}>
               <Text style={styles.comicHeaderTitle}>Post #{post.id}</Text>
-              <Pressable onPress={() => setComicOpen(false)} hitSlop={12} style={styles.comicCloseBtn}>
+              <Pressable
+                onPress={() => setComicOpen(false)}
+                hitSlop={12}
+                style={styles.comicCloseBtn}
+              >
                 <Ionicons name="close" size={24} color="#fff" />
               </Pressable>
             </View>
             {Platform.OS === "web" ? (
-              <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch" } as any}>
-                <img src={mediaUrl} style={{ width: "100%", display: "block" }} />
+              <div
+                style={
+                  {
+                    flex: 1,
+                    overflowY: "auto",
+                    WebkitOverflowScrolling: "touch",
+                  } as any
+                }
+              >
+                <img
+                  src={mediaUrl}
+                  style={{ width: "100%", display: "block" }}
+                />
               </div>
             ) : (
               <ScrollView
@@ -853,7 +1168,12 @@ function ActionButton({
   onLongPress?: () => void;
 }) {
   return (
-    <Pressable style={styles.actionBtn} onPress={onPress} onLongPress={onLongPress} delayLongPress={400}>
+    <Pressable
+      style={styles.actionBtn}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      delayLongPress={400}
+    >
       <Ionicons name={icon} size={22} color={color} />
       <Text style={[styles.actionLabel, { color }]}>{label}</Text>
     </Pressable>

@@ -6,6 +6,7 @@ import React, {
     useState,
 } from "react";
 import { Platform } from "react-native";
+import { setActiveSiteForApi } from "../api";
 
 export type SiteName = "r34vault" | "e621";
 
@@ -59,7 +60,11 @@ export function SiteProvider({ children }: { children: React.ReactNode }) {
     storage
       .getItem(SITE_KEY)
       .then((val) => {
-        if (val === "e621" || val === "r34vault") setActiveSiteState(val);
+        if (val === "e621" || val === "r34vault") {
+          // Sync API module BEFORE state update so child effects see the correct API
+          setActiveSiteForApi(val);
+          setActiveSiteState(val);
+        }
       })
       .catch(() => {})
       .finally(() => setSiteReady(true));
@@ -67,6 +72,10 @@ export function SiteProvider({ children }: { children: React.ReactNode }) {
 
   const setActiveSite = useCallback((site: SiteName) => {
     console.log("[SiteContext] setActiveSite called with:", site);
+    // Sync API module BEFORE React state update — ensures getActiveApi() returns
+    // the correct site immediately when child useEffect hooks fire (effects run
+    // child-before-parent, so SiteApiSync's effect would otherwise be too late).
+    setActiveSiteForApi(site);
     setActiveSiteState(site);
     storage.setItem(SITE_KEY, site).catch((e) => {
       console.warn("[SiteContext] Failed to persist active site:", e);

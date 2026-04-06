@@ -13,9 +13,11 @@ import api, { Playlist } from "../../api/rule34vault";
 import { PlaylistCard } from "../../components/PlaylistCard";
 import { SkeletonLoader } from "../../components/SkeletonLoader";
 import { Colors, FontSize, Spacing } from "../../constants/theme";
+import { useSite } from "../../contexts/SiteContext";
 import { useAppTheme } from "../../contexts/ThemeContext";
 
 export default function PlaylistsScreen() {
+  const { isE621, activeSite } = useSite();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -36,7 +38,7 @@ export default function PlaylistsScreen() {
       try {
         const data = await api.searchPlaylists(
           20,
-          refresh ? null : cursorRef.current
+          refresh ? null : cursorRef.current,
         );
         if (refresh) {
           setPlaylists(data.items);
@@ -52,12 +54,13 @@ export default function PlaylistsScreen() {
         setIsLoadingMore(false);
       }
     },
-    [isLoadingMore]
+    [isLoadingMore],
   );
 
+  // Reload when site changes
   useEffect(() => {
     loadPlaylists(true);
-  }, []);
+  }, [activeSite]);
 
   const { colors } = useAppTheme();
   const { width } = useWindowDimensions();
@@ -66,8 +69,15 @@ export default function PlaylistsScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.bg }]}>
         {Array.from({ length: 6 }).map((_, i) => (
-          <View key={i} style={[styles.skeletonRow, { backgroundColor: colors.bgCard }]}>
-            <SkeletonLoader width={56} height={56} style={{ borderRadius: 8 }} />
+          <View
+            key={i}
+            style={[styles.skeletonRow, { backgroundColor: colors.bgCard }]}
+          >
+            <SkeletonLoader
+              width={56}
+              height={56}
+              style={{ borderRadius: 8 }}
+            />
             <View style={{ flex: 1, gap: 8 }}>
               <SkeletonLoader width="70%" height={14} />
               <SkeletonLoader width="40%" height={11} />
@@ -90,9 +100,19 @@ export default function PlaylistsScreen() {
         onEndReachedThreshold={0.5}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="list-outline" size={56} color={colors.textMuted} />
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No Playlists</Text>
-            <Text style={[styles.empty, { color: colors.textMuted }]}>Create playlists on rule34vault.com</Text>
+            <Ionicons
+              name={isE621 ? "albums-outline" : "list-outline"}
+              size={56}
+              color={colors.textMuted}
+            />
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>
+              {isE621 ? "No Pools Found" : "No Playlists"}
+            </Text>
+            <Text style={[styles.empty, { color: colors.textMuted }]}>
+              {isE621
+                ? "Browse pools (comics & series) from e621"
+                : "Create playlists on rule34vault.com"}
+            </Text>
           </View>
         }
         ListFooterComponent={

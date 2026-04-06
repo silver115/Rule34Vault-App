@@ -1,15 +1,21 @@
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    View,
 } from "react-native";
 import api, { SearchFilters, Tag } from "../api/rule34vault";
-import { Colors, FontSize, getTagColor, Radius, Spacing } from "../constants/theme";
+import {
+    Colors,
+    FontSize,
+    getTagColor,
+    Radius,
+    Spacing,
+} from "../constants/theme";
 
 interface FilterBarProps {
   filters: SearchFilters;
@@ -31,14 +37,20 @@ const HOT_RANGE_OPTIONS = [
   { label: "Monthly", value: 30, icon: "calendar-outline" as const },
 ];
 
-export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarProps) {
+export function FilterBar({
+  filters,
+  onFiltersChange,
+  hideTagInput,
+}: FilterBarProps) {
   const [rangeOpen, setRangeOpen] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [suggestions, setSuggestions] = useState<Tag[]>([]);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const currentRange = filters.postedFromDays != null ? filters.postedFromDays : -1;
-  const rangeLabel = HOT_RANGE_OPTIONS.find((o) => o.value === currentRange)?.label ?? "Hot";
+  const currentRange =
+    filters.postedFromDays != null ? filters.postedFromDays : -1;
+  const rangeLabel =
+    HOT_RANGE_OPTIONS.find((o) => o.value === currentRange)?.label ?? "Hot";
   const tags = useMemo(() => filters.includeTags ?? [], [filters.includeTags]);
 
   useEffect(() => {
@@ -47,17 +59,21 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
       debounceRef.current = setTimeout(async () => {
         try {
           const results = await api.searchTags(tagInput);
-          setSuggestions(results.filter(
-            (t) => !tags.includes(t.value.toLowerCase())
-          ).slice(0, 10));
+          setSuggestions(
+            results
+              .filter((t) => !tags.includes(t.value.toLowerCase()))
+              .slice(0, 10),
+          );
         } catch {
           setSuggestions([]);
         }
       }, 200);
     } else {
-      setSuggestions((prev) => prev.length === 0 ? prev : []);
+      setSuggestions((prev) => (prev.length === 0 ? prev : []));
     }
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [tagInput, tags]);
 
   function addTag(tagValue: string) {
@@ -103,7 +119,9 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
                   size={14}
                   color={active ? "#fff" : Colors.textSecondary}
                 />
-                <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                <Text
+                  style={[styles.chipText, active && styles.chipTextActive]}
+                >
                   {opt.label}
                 </Text>
               </Pressable>
@@ -120,7 +138,12 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
               size={14}
               color={currentRange >= 0 ? "#fff" : Colors.textSecondary}
             />
-            <Text style={[styles.chipText, currentRange >= 0 && styles.chipTextActive]}>
+            <Text
+              style={[
+                styles.chipText,
+                currentRange >= 0 && styles.chipTextActive,
+              ]}
+            >
               {rangeLabel}
             </Text>
             <Ionicons
@@ -140,7 +163,10 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
             return (
               <Pressable
                 key={opt.value}
-                style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                style={[
+                  styles.dropdownItem,
+                  active && styles.dropdownItemActive,
+                ]}
                 onPress={() => {
                   if (opt.value === -1) {
                     // Default: clear hot range and reset sort
@@ -156,11 +182,22 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
                   setRangeOpen(false);
                 }}
               >
-                <Ionicons name={opt.icon} size={16} color={active ? Colors.accent : Colors.textSecondary} />
-                <Text style={[styles.dropdownText, active && styles.dropdownTextActive]}>
+                <Ionicons
+                  name={opt.icon}
+                  size={16}
+                  color={active ? Colors.accent : Colors.textSecondary}
+                />
+                <Text
+                  style={[
+                    styles.dropdownText,
+                    active && styles.dropdownTextActive,
+                  ]}
+                >
                   {opt.label}
                 </Text>
-                {active && <Ionicons name="checkmark" size={16} color={Colors.accent} />}
+                {active && (
+                  <Ionicons name="checkmark" size={16} color={Colors.accent} />
+                )}
               </Pressable>
             );
           })}
@@ -200,7 +237,10 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
                   onPress={() => addTag(tag.value)}
                 >
                   <View
-                    style={[styles.tagDot, { backgroundColor: getTagColor(tag.type) }]}
+                    style={[
+                      styles.tagDot,
+                      { backgroundColor: getTagColor(tag.type) },
+                    ]}
                   />
                   <Text style={styles.suggestionText}>{tag.value}</Text>
                   <Text style={styles.suggestionCount}>
@@ -227,7 +267,11 @@ export function FilterBar({ filters, onFiltersChange, hideTagInput }: FilterBarP
                   onPress={() => removeTag(t)}
                 >
                   <Text style={styles.activeTagText}>{t}</Text>
-                  <Ionicons name="close-circle" size={14} color={Colors.textSecondary} />
+                  <Ionicons
+                    name="close-circle"
+                    size={14}
+                    color={Colors.textSecondary}
+                  />
                 </Pressable>
               ))}
             </ScrollView>

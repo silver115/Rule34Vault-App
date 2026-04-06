@@ -43,7 +43,7 @@ function WebImg({
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { user, isLoggedIn, logout } = useAuth();
+  const { user, isLoggedIn, isLoading: authLoading, logout } = useAuth();
   const { isE621 } = useSite();
   const { colors } = useAppTheme();
   const { playlists, activePlaylist, setActivePlaylist, refreshPlaylists } =
@@ -64,7 +64,9 @@ export default function ProfileScreen() {
         refreshPlaylists(),
       ]);
       if (bl) setBlacklist(bl);
-    } catch {}
+    } catch (e) {
+      console.warn("[Profile] loadProfileData error:", e);
+    }
   }, [isLoggedIn, refreshPlaylists]);
 
   useEffect(() => {
@@ -83,6 +85,24 @@ export default function ProfileScreen() {
     await loadProfileData();
     setRefreshing(false);
   }, [loadProfileData]);
+
+  if (authLoading) {
+    return (
+      <View
+        style={[
+          styles.container,
+          styles.center,
+          { backgroundColor: colors.bg },
+        ]}
+      >
+        <Ionicons
+          name="person-circle-outline"
+          size={64}
+          color={colors.textMuted}
+        />
+      </View>
+    );
+  }
 
   if (!isLoggedIn || !user) {
     return (
@@ -127,12 +147,13 @@ export default function ProfileScreen() {
   }
 
   const stats = user.data;
-  const avatarUrl = getAvatarUrl(
-    user.id,
-    user.avatarModifyDate ?? undefined,
-    256,
-  );
-  const bannerUrl = getBannerUrl(user.id, stats?.profileImageDate ?? undefined);
+  // e621 users don't have R34V CDN avatars/banners — skip those URL lookups
+  const avatarUrl = isE621
+    ? user.avatarModifyDate || null
+    : getAvatarUrl(user.id, user.avatarModifyDate ?? undefined, 256);
+  const bannerUrl = isE621
+    ? null
+    : getBannerUrl(user.id, stats?.profileImageDate ?? undefined);
 
   return (
     <ScrollView
@@ -182,16 +203,20 @@ export default function ProfileScreen() {
             { backgroundColor: colors.bgTertiary, borderColor: colors.bg },
           ]}
         >
-          <WebImg
-            uri={avatarUrl}
-            style={{
-              width: 88,
-              height: 88,
-              borderRadius: 44,
-              objectFit: "cover",
-              display: "block",
-            }}
-          />
+          {avatarUrl ? (
+            <WebImg
+              uri={avatarUrl}
+              style={{
+                width: 88,
+                height: 88,
+                borderRadius: 44,
+                objectFit: "cover",
+                display: "block",
+              }}
+            />
+          ) : (
+            <Ionicons name="person" size={48} color={colors.textMuted} />
+          )}
         </View>
         <Text style={[styles.displayName, { color: colors.text }]}>
           {user.displayName ?? "User"}
@@ -384,17 +409,23 @@ export default function ProfileScreen() {
 
       {/* Menu */}
       <View style={[styles.section, { backgroundColor: colors.bgCard }]}>
-        <MenuItem
-          icon="albums-outline"
-          label="Followed Playlists"
-          subtitle={`${stats?.followingPlaylists ?? 0} playlists`}
-          onPress={() => router.push({ pathname: "/followed-playlists" })}
-        />
+        {!isE621 && (
+          <MenuItem
+            icon="albums-outline"
+            label="Followed Playlists"
+            subtitle={`${stats?.followingPlaylists ?? 0} playlists`}
+            onPress={() => router.push({ pathname: "/followed-playlists" })}
+          />
+        )}
         <MenuItem
           icon="globe-outline"
           label="View on Website"
           onPress={() =>
-            Linking.openURL(`https://rule34vault.com/u/${user.userName}`)
+            Linking.openURL(
+              isE621
+                ? `https://e621.net/users/${user.userName}`
+                : `https://rule34vault.com/u/${user.userName}`,
+            )
           }
         />
         <MenuItem

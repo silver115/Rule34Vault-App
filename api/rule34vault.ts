@@ -470,6 +470,10 @@ class Rule34VaultAPI {
     await this.post("/post/action/super-like", { postId });
   }
 
+  async votePost(_postId: number, _score: 1 | -1): Promise<void> {
+    // No-op on R34V — voting is e621-only
+  }
+
   // ── Playlists ─────────────────────────────────────────
   async getPlaylist(playlistId: number): Promise<Playlist> {
     return this.get<Playlist>(`/playlist/${playlistId}`);
@@ -864,6 +868,7 @@ export interface SearchFilters {
   minScore?: number; // client-side: min likes threshold
   sortBy?: number; // 0=id, 1=likes, 2=views
   postedFromDays?: number; // 1=daily, 7=weekly, 30=monthly
+  rating?: "s" | "q" | "e" | null; // e621 only: safe/questionable/explicit
 }
 
 // ── Post cache ─────────────────────────────────────────

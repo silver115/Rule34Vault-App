@@ -4,11 +4,12 @@ import { useNavigation } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { getActiveApi } from "../../api/index";
-import { Post, SearchFilters } from "../../api/rule34vault";
+import { Post, SearchFilters, Tag } from "../../api/rule34vault";
 import { FilterBar } from "../../components/FilterBar";
 import { PostGrid } from "../../components/PostGrid";
 import { TikTokFeed } from "../../components/TikTokFeed";
 import { Colors, FontSize, Radius, Spacing } from "../../constants/theme";
+import { useAuth } from "../../contexts/AuthContext";
 import { useSettings } from "../../contexts/SettingsContext";
 import { useSite } from "../../contexts/SiteContext";
 import { useAppTheme } from "../../contexts/ThemeContext";
@@ -28,6 +29,7 @@ const FEED_OPTIONS: {
 
 export default function BrowseScreen() {
   const { activeSite } = useSite();
+  const { isLoggedIn } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -35,6 +37,7 @@ export default function BrowseScreen() {
   const [filters, setFilters] = useState<SearchFilters>({});
   const [feedType, setFeedType] = useState<FeedType>("recent");
   const [feedOpen, setFeedOpen] = useState(false);
+  const [blacklist, setBlacklist] = useState<Tag[]>([]);
   const cursorRef = useRef<string | null>(null);
   const hasMoreRef = useRef(true);
   const isLoadingMoreRef = useRef(false);
@@ -63,15 +66,19 @@ export default function BrowseScreen() {
 
     setLoadError(false);
     try {
+      const isE621Site = activeSite === "e621";
       const batchSize = minScore > 0 ? 120 : 60;
       const feedFilters: SearchFilters = { ...currentFilters };
 
-      // sortBy enum: 0=id (recent), 1=likes (top rated), 2=views
+      // sortBy enum: 0=id (recent), 1=likes/favcount, 2=views/score, 3=comments (e621 only)
       if (currentFeed === "hot") {
-        feedFilters.sortBy = 1;
+        // e621: order:score with date range gives better "trending" than pure favcount
+        feedFilters.sortBy = isE621Site ? 2 : 1;
         if (!feedFilters.postedFromDays) feedFilters.postedFromDays = 7;
       }
       if (currentFeed === "highest") feedFilters.sortBy = 1;
+      // e621: use server-side order:comment; R34V: sort fetched batch client-side
+      if (currentFeed === "comments" && isE621Site) feedFilters.sortBy = 3;
 
       const activeApi = getActiveApi();
       const data = await activeApi.searchPosts(
@@ -85,7 +92,6 @@ export default function BrowseScreen() {
       let items = data.items;
       // e621 search already returns full post data (likes, comments, etc.)
       // so skip the expensive batch detail-fetch for e621
-      const isE621Site = activeSite === "e621";
       const needsDetails =
         !isE621Site && (minScore > 0 || currentFeed === "comments");
       if (needsDetails) {
@@ -98,7 +104,18 @@ export default function BrowseScreen() {
         items = items.filter((p) => (p.likes ?? 0) >= minScore);
       }
 
-      if (currentFeed === "comments") {
+      // Apply blacklist filter for logged-in users
+      if (isLoggedIn && blacklist.length > 0) {
+        const blacklistSet = new Set(
+          blacklist.map((t) => t.value.toLowerCase()),
+        );
+        items = items.filter((p) => {
+          const postTags = p.tags?.map((t) => t.value.toLowerCase()) ?? [];
+          return !postTags.some((tag) => blacklistSet.has(tag));
+        });
+      }
+
+      if (currentFeed === "comments" && !isE621Site) {
         items = [...items].sort(
           (a, b) => (b.comments ?? 0) - (a.comments ?? 0),
         );
@@ -144,6 +161,23 @@ export default function BrowseScreen() {
     hasMoreRef.current = true;
     doLoad(true);
   }, [activeSite]);
+
+  // Fetch blacklist when logged in or site changes
+  useEffect(() => {
+    if (!isLoggedIn) {
+      setBlacklist([]);
+      return;
+    }
+    const activeApi = getActiveApi();
+    activeApi
+      .getTagBlacklist()
+      .then((bl) => {
+        if (bl?.tags) setBlacklist(bl.tags);
+      })
+      .catch(() => {
+        setBlacklist([]);
+      });
+  }, [isLoggedIn, activeSite]);
 
   const activeFeed = FEED_OPTIONS.find((f) => f.key === feedType)!;
   const { colors } = useAppTheme();

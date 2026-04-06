@@ -796,7 +796,15 @@ function adaptE621Post(e6) {
     uploaderId: e6.uploader_id,
     width: e6.file?.width ?? 0,
     height: e6.file?.height ?? 0,
+    duration: e6.duration ?? undefined,
     tags: adaptE621Tags(e6.tags ?? {}),
+    _e621Urls: {
+      full: e6.file?.url ?? null,
+      thumb: e6.preview?.url ?? null,
+      sample: e6.sample?.has
+        ? (e6.sample?.url ?? null)
+        : (e6.file?.url ?? null),
+    },
   };
 }
 
@@ -1141,20 +1149,25 @@ async function buildE621Recommendations(
   // Fetch 5x the requested amount so there's plenty after seen-post filtering
   const fetchN = Math.ceil(take * 5);
 
+  // Compute a dynamic date cutoff for the recent-quality pool
+  const recentCutoff = new Date(Date.now() - 180 * 86_400_000)
+    .toISOString()
+    .slice(0, 10);
+
   const results = await Promise.allSettled([
-    // Pool 0: Core interests (top 2 tags, sorted by favcount)
+    // Pool 0: Core interests — newest posts matching top 2 tags (default e621 sort = order:id)
     pool0Tags.length
       ? searchE621Posts(pool0Tags, fetchN, username, apiKey).catch(() => [])
       : Promise.resolve([]),
-    // Pool 1: Secondary interests (tags 3-4, sorted by favcount)
+    // Pool 1: Secondary interests — newest posts matching tags 3-4
     pool1Tags.length
       ? searchE621Posts(pool1Tags, fetchN, username, apiKey).catch(() => [])
       : Promise.resolve([]),
-    // Pool 2: Co-occurrence pairs (tags that appear together in favorites)
+    // Pool 2: Co-occurrence pairs — tags that appear together in user's favorites
     cooccTags.length === 2
       ? searchE621Posts(cooccTags, fetchN, username, apiKey).catch(() => [])
       : Promise.resolve([]),
-    // Pool 3: Discovery — adjacent interests (tags 5-10, one at a time for diversity)
+    // Pool 3: Discovery — adjacent interests (tags 5-10, one at a time for variety)
     discoveryTags.length > 0
       ? Promise.allSettled(
           discoveryTags
@@ -1171,17 +1184,19 @@ async function buildE621Recommendations(
           results.flatMap((r) => (r.status === "fulfilled" ? r.value : [])),
         )
       : Promise.resolve([]),
-    // Pool 4: Serendipity — newest content (fresh posts the user hasn't seen)
+    // Pool 4: Fresh global — newest posts site-wide (keeps feed feeling live)
     searchE621Posts(
       ["order:id"],
-      Math.ceil(fetchN / 2),
+      Math.ceil(fetchN / 3),
       username,
       apiKey,
     ).catch(() => []),
-    // Pool 5: Serendipity — popular content (high quality outside user's bubble)
+    // Pool 5: Recent quality — score-sorted posts from the last 6 months.
+    // Replaces all-time order:favcount which surfaced old viral posts everyone
+    // has already seen. This gives quality content that is actually recent.
     searchE621Posts(
-      ["order:favcount"],
-      Math.ceil(fetchN / 2),
+      [`date:>${recentCutoff}`, "order:score"],
+      Math.ceil(fetchN / 3),
       username,
       apiKey,
     ).catch(() => []),
@@ -1193,7 +1208,7 @@ async function buildE621Recommendations(
   function pickFromPool(pool, max) {
     const candidates = pool
       .filter((p) => !globalSeen.has(p.id))
-      .map((p) => ({ post: p, score: scorePost(p, tagScore) }))
+      .map((p) => ({ post: p, score: scoreE621Post(p, tagScore) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, max * 4);
     fyShuffleAll(candidates);
@@ -1207,13 +1222,13 @@ async function buildE621Recommendations(
     return picked;
   }
 
-  // e621 has less content — shift ratios toward exploration & serendipity
-  const coreMax = Math.ceil(take * 0.2);
-  const secMax = Math.ceil(take * 0.15);
-  const coMax = Math.ceil(take * 0.15);
-  const discMax = Math.ceil(take * 0.2);
-  const serendipNewMax = Math.ceil(take * 0.15);
-  const serendipPopMax = Math.ceil(take * 0.15);
+  // Ratios: weight personalised pools heavily, keep global serendipity small
+  const coreMax = Math.ceil(take * 0.3); // 30% — user's top interests
+  const secMax = Math.ceil(take * 0.2); // 20% — secondary interests
+  const coMax = Math.ceil(take * 0.15); // 15% — co-occurring tastes
+  const discMax = Math.ceil(take * 0.2); // 20% — adjacent discovery
+  const serendipNewMax = Math.ceil(take * 0.08); // 8%  — newest site-wide
+  const serendipPopMax = Math.ceil(take * 0.07); // 7%  — recent quality
 
   const pickedPools = [
     pickFromPool(pools[0], coreMax),
@@ -1233,10 +1248,10 @@ async function buildE621Recommendations(
   if (diverse.length < take) {
     const needed = take - diverse.length;
     const backfill = pools[0]
+      .concat(pools[1])
       .concat(pools[3])
-      .concat(pools[5])
       .filter((p) => !globalSeen.has(p.id))
-      .map((p) => ({ post: p, score: scorePost(p, tagScore) }))
+      .map((p) => ({ post: p, score: scoreE621Post(p, tagScore) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, needed * 2);
     fyShuffleAll(backfill);
@@ -1440,6 +1455,36 @@ function enforceDiversity(posts) {
     }
     return !dominated;
   });
+}
+
+// e621-specific scorer: personalisation >> recency > global popularity.
+// The shared scorePost gives too much weight to all-time likes, causing old
+// viral posts to dominate. This version penalises age aggressively and
+// reduces the raw popularity term so fresh personalised content wins.
+function scoreE621Post(post, tagScore) {
+  let s = 0;
+  for (const tag of post.tags ?? []) {
+    const baseScore = tagScore[tag.value] ?? 0;
+    const idf = getIdfWeight(tag.value);
+    s += baseScore * idf;
+  }
+  // Popularity contributes only a small nudge (was 1.5 — too dominant)
+  s += Math.log((post.likes ?? 0) + 1) * 0.4;
+  // Strong age curve: fresh content gets a boost, old content gets penalised
+  const ageDays =
+    (Date.now() - new Date(post.posted ?? post.created).getTime()) / 86_400_000;
+  if (ageDays < 3)
+    s *= 1.6; // brand new
+  else if (ageDays < 14)
+    s *= 1.35; // within 2 weeks
+  else if (ageDays < 60)
+    s *= 1.1; // within 2 months
+  else if (ageDays < 180)
+    s *= 0.85; // 2-6 months — slight penalty
+  else if (ageDays < 365)
+    s *= 0.55; // 6-12 months — moderate penalty
+  else s *= 0.25; // >1 year — heavy penalty
+  return s;
 }
 
 // e621-specific diversity: tighter caps since content pool is smaller

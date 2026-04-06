@@ -18,6 +18,7 @@ import { Colors, FontSize, Radius, Spacing } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
 import { usePlaylist } from "../contexts/PlaylistContext";
 import { useSettings } from "../contexts/SettingsContext";
+import { useSite } from "../contexts/SiteContext";
 import { useAppTheme } from "../contexts/ThemeContext";
 import { downloadMedia } from "../utils/download";
 import { getSiteMediaUrl } from "../utils/media";
@@ -51,7 +52,7 @@ export function markBroken(id: number) {
 interface PostCardProps {
   post: Post;
   index: number;
-  onPress?: () => void;
+  onNavigate?: (post: Post, index: number) => void;
   badgeText?: string;
   onBroken?: (id: number) => void;
   actionState?: {
@@ -180,7 +181,7 @@ function Thumbnail({
 function PostCardInner({
   post,
   index,
-  onPress,
+  onNavigate,
   badgeText,
   onBroken,
   actionState,
@@ -188,6 +189,7 @@ function PostCardInner({
 }: PostCardProps) {
   const router = useRouter();
   const { isLoggedIn, token } = useAuth();
+  const { isE621 } = useSite();
   const { colors } = useAppTheme();
   const { qualityOption } = useSettings();
   const {
@@ -202,7 +204,13 @@ function PostCardInner({
     (screenWidth - GAP * (NUM_COLUMNS + 1)) / NUM_COLUMNS,
   );
   const cardHeight = Math.floor(cardWidth / FIXED_ASPECT);
-  const thumbUrl = getSiteMediaUrl(post, qualityOption.gridVariant);
+  // For e621: use "sample" (850px pre-scaled) for grid cards instead of tiny "thumb" (150px)
+  // or wastefully large "full" (multi-MB originals). R34V falls through to normal gridVariant.
+  const gridVariant =
+    isE621 && qualityOption.gridVariant === "thumb"
+      ? "sample"
+      : qualityOption.gridVariant;
+  const thumbUrl = getSiteMediaUrl(post, gridVariant as any);
   const thumbFallback = getSiteMediaUrl(post, "thumb");
   const fullUrl = getSiteMediaUrl(post, "full");
   const isVideo = post.type === 1;
@@ -313,18 +321,17 @@ function PostCardInner({
     [post.id, setActivePlaylist],
   );
 
+  const handleCardPress = useCallback(() => {
+    if (onNavigate) {
+      onNavigate(post, index);
+    } else {
+      router.push({ pathname: "/post/[id]", params: { id: String(post.id) } });
+    }
+  }, [onNavigate, post, index, router]);
+
   return (
     <Pressable
-      onPress={() => {
-        if (onPress) {
-          onPress();
-        } else {
-          router.push({
-            pathname: "/post/[id]",
-            params: { id: String(post.id) },
-          });
-        }
-      }}
+      onPress={handleCardPress}
       style={({ pressed }) => [
         styles.card,
         {
@@ -394,20 +401,22 @@ function PostCardInner({
               color={superLiked ? "#FFD700" : liked ? "#ff4466" : "#fff"}
             />
           </Pressable>
-          <Pressable
-            style={({ pressed }) => [
-              styles.quickBtn,
-              pressed && { opacity: 0.7, transform: [{ scale: 0.85 }] },
-            ]}
-            onPress={handleBookmark}
-            hitSlop={6}
-          >
-            <Ionicons
-              name={bookmarked ? "bookmark" : "bookmark-outline"}
-              size={18}
-              color={bookmarked ? "#ffaa00" : "#fff"}
-            />
-          </Pressable>
+          {!isE621 && (
+            <Pressable
+              style={({ pressed }) => [
+                styles.quickBtn,
+                pressed && { opacity: 0.7, transform: [{ scale: 0.85 }] },
+              ]}
+              onPress={handleBookmark}
+              hitSlop={6}
+            >
+              <Ionicons
+                name={bookmarked ? "bookmark" : "bookmark-outline"}
+                size={18}
+                color={bookmarked ? "#ffaa00" : "#fff"}
+              />
+            </Pressable>
+          )}
           {playlists.length > 0 && (
             <Pressable style={styles.quickBtn} onPress={handlePlaylistToggle}>
               <Ionicons

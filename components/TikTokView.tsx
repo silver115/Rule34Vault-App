@@ -20,14 +20,10 @@ import {
     useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-    Post,
-    PostComment,
-    api,
-    getAvatarUrl
-} from "../api/rule34vault";
+import { Post, PostComment, api, getAvatarUrl } from "../api/rule34vault";
 import { Colors } from "../constants/theme";
 import { useAuth } from "../contexts/AuthContext";
+import { useSite } from "../contexts/SiteContext";
 import { getSiteMediaUrl } from "../utils/media";
 import { sendAttentionSignal, sendRecSignal } from "../utils/recommendations";
 import { ZoomableImage } from "./ZoomableImage";
@@ -70,6 +66,7 @@ export function TikTokView({
 }: TikTokViewProps) {
   const { width: SW, height: SH } = useWindowDimensions();
   const { user, isLoggedIn, token } = useAuth();
+  const { isE621 } = useSite();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -716,15 +713,17 @@ export function TikTokView({
           </Text>
         </Pressable>
 
-        {/* Bookmark */}
-        <Pressable style={styles.sideBtn} onPress={handleBookmark}>
-          <Ionicons
-            name={isBookmarked ? "bookmark" : "bookmark-outline"}
-            size={28}
-            color={isBookmarked ? Colors.accent : "white"}
-          />
-          <Text style={styles.sideBtnText}>{bookmarkCount}</Text>
-        </Pressable>
+        {/* Bookmark — hidden on e621 (no bookmarks feature) */}
+        {!isE621 && (
+          <Pressable style={styles.sideBtn} onPress={handleBookmark}>
+            <Ionicons
+              name={isBookmarked ? "bookmark" : "bookmark-outline"}
+              size={28}
+              color={isBookmarked ? Colors.accent : "white"}
+            />
+            <Text style={styles.sideBtnText}>{bookmarkCount}</Text>
+          </Pressable>
+        )}
 
         {/* Comments */}
         <Pressable style={styles.sideBtn} onPress={handleComments}>

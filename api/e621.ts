@@ -14,15 +14,29 @@ import type {
 const E621_BASE = "https://e621.net";
 const USER_AGENT = "Rule34VaultApp/1.0 (by Puro115 on e621)";
 
-// ── Rate limiter (e621 hard limit: 2 req/s → 500ms minimum gap) ──
-let lastRequestTime = 0;
+// ── Token-bucket rate limiter (e621 TOS: max 2 req/s) ──
+// Allows 2 requests per 1000ms window instead of serial 500ms gaps.
+// This roughly doubles burst throughput while staying TOS-compliant.
+const BUCKET_MAX = 2;
+const BUCKET_REFILL_MS = 1000;
+let bucketTokens = BUCKET_MAX;
+let bucketLastRefill = Date.now();
 async function rateLimitWait(): Promise<void> {
   const now = Date.now();
-  const elapsed = now - lastRequestTime;
-  if (elapsed < 500) {
-    await new Promise((r) => setTimeout(r, 500 - elapsed));
+  const elapsed = now - bucketLastRefill;
+  if (elapsed >= BUCKET_REFILL_MS) {
+    bucketTokens = BUCKET_MAX;
+    bucketLastRefill = now;
   }
-  lastRequestTime = Date.now();
+  if (bucketTokens > 0) {
+    bucketTokens--;
+    return;
+  }
+  // No tokens left — wait until bucket refills
+  const waitMs = BUCKET_REFILL_MS - (Date.now() - bucketLastRefill);
+  if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs));
+  bucketTokens = BUCKET_MAX - 1;
+  bucketLastRefill = Date.now();
 }
 
 // ── e621 raw types ──
@@ -84,6 +98,62 @@ interface E621User {
   level_string: string;
   avatar_id: number | null;
   favorite_count: number;
+  blacklisted_tags?: string;
+  profile_about?: string;
+  artist_version_count?: number;
+}
+
+interface E621Pool {
+  id: number;
+  name: string;
+  created_at: string;
+  updated_at: string;
+  creator_id: number;
+  creator_name: string;
+  description: string;
+  is_active: boolean;
+  category: string; // "series" or "collection"
+  post_ids: number[];
+  post_count: number;
+}
+
+interface E621Comment {
+  id: number;
+  created_at: string;
+  updated_at: string;
+  post_id: number;
+  creator_id: number;
+  creator_name: string;
+  body: string;
+  score: number;
+  is_hidden: boolean;
+  warning_type: string | null;
+}
+
+function adaptPool(pool: E621Pool): Playlist {
+  return {
+    id: pool.id,
+    created: pool.created_at,
+    updated: pool.updated_at,
+    userId: pool.creator_id,
+    user: {
+      id: pool.creator_id,
+      created: "",
+      displayName: pool.creator_name,
+      userName: pool.creator_name,
+      emailVerified: true,
+      role: 0,
+    },
+    title: pool.name.replace(/_/g, " "),
+    description: pool.description,
+    views: 0,
+    likes: 0,
+    comments: 0,
+    followers: 0,
+    isPrivate: false,
+    items: pool.post_count,
+    useCustomImage: false,
+  };
 }
 
 // ── Tag type mapping: e621 category → app tag type ──
@@ -145,7 +215,7 @@ function adaptPost(e6: E621Post): Post {
 // ── Media URL helpers (exported for use by components) ──
 export function getE621MediaUrl(
   post: Post,
-  variant: "full" | "thumb" = "full",
+  variant: "full" | "thumb" | "sample" = "full",
 ): string {
   // e621 posts store URLs in a special way — we embed them in the post's data
   const urls = (post as any)._e621Urls as
@@ -154,6 +224,7 @@ export function getE621MediaUrl(
   if (urls) {
     if (variant === "thumb")
       return urls.thumb || urls.sample || urls.full || "";
+    if (variant === "sample") return urls.sample || urls.full || "";
     return urls.full || urls.sample || "";
   }
   return "";
@@ -167,6 +238,24 @@ function adaptPostWithUrls(e6: E621Post): Post {
     thumb: e6.preview.url,
     sample: e6.sample.has ? e6.sample.url : e6.file.url,
   };
+  // Carry is_favorited so we can skip per-post action-state API calls
+  (post as any)._e621Favorited = e6.is_favorited ?? false;
+  // Carry relationship data for parent/child navigation
+  (post as any)._e621Relationships = {
+    parentId: e6.relationships?.parent_id ?? null,
+    hasChildren: e6.relationships?.has_children ?? false,
+    children: e6.relationships?.children ?? [],
+  };
+  // Carry pools for pool navigation
+  (post as any)._e621Pools = e6.pools ?? [];
+  // Carry score breakdown for voting UI
+  (post as any)._e621Score = {
+    up: e6.score?.up ?? 0,
+    down: e6.score?.down ?? 0,
+    total: e6.score?.total ?? 0,
+  };
+  // Carry rating
+  (post as any)._e621Rating = e6.rating ?? "e";
   return post;
 }
 
@@ -188,6 +277,9 @@ function adaptUser(e6u: E621User): UserProfile {
       following: 0,
       followingPlaylists: 0,
       postsUploaded: e6u.post_upload_count,
+      description: e6u.level_string
+        ? `${e6u.level_string} · ${e6u.post_upload_count} uploads`
+        : undefined,
     },
   };
 }
@@ -285,6 +377,21 @@ class E621API {
   }
 
   // ── Auth ──
+  private async fetchAvatarUrl(
+    avatarId: number | null,
+  ): Promise<string | undefined> {
+    if (!avatarId) return undefined;
+    try {
+      const data = await this.get<{ post: E621Post }>(
+        `/posts/${avatarId}.json`,
+      );
+      const p = data?.post;
+      return p?.preview?.url ?? p?.sample?.url ?? p?.file?.url ?? undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   async login(username: string, apiKey: string): Promise<AuthResponse> {
     this.username = username;
     this.apiKey = apiKey;
@@ -293,7 +400,10 @@ class E621API {
       const e6user = await this.get<E621User>(
         `/users/${encodeURIComponent(username)}.json`,
       );
-      this.user = adaptUser(e6user);
+      const profile = adaptUser(e6user);
+      const avatarUrl = await this.fetchAvatarUrl(e6user.avatar_id);
+      if (avatarUrl) profile.avatarModifyDate = avatarUrl;
+      this.user = profile;
       // Synthesize a JWT-like token for storage compatibility
       const token = btoa(`${username}:${apiKey}`);
       return { user: this.user, jwt: token };
@@ -312,7 +422,10 @@ class E621API {
     const e6user = await this.get<E621User>(
       `/users/${encodeURIComponent(this.username)}.json`,
     );
-    this.user = adaptUser(e6user);
+    const profile = adaptUser(e6user);
+    const avatarUrl = await this.fetchAvatarUrl(e6user.avatar_id);
+    if (avatarUrl) profile.avatarModifyDate = avatarUrl;
+    this.user = profile;
     return this.user;
   }
 
@@ -362,13 +475,21 @@ class E621API {
     };
     const tagParts: string[] = [];
     if (filters?.includeTags?.length) tagParts.push(...filters.includeTags);
-    if (filters?.type === 0) tagParts.push("type:png,jpg,gif");
-    if (filters?.type === 1) tagParts.push("type:webm,mp4");
+    // e621 does not support comma-list type syntax — use negation/OR metatags instead
+    if (filters?.type === 0) tagParts.push("-type:webm", "-type:mp4");
+    if (filters?.type === 1) tagParts.push("~type:webm", "~type:mp4");
     if (filters?.sortBy === 1) tagParts.push("order:favcount");
     else if (filters?.sortBy === 2) tagParts.push("order:score");
+    else if (filters?.sortBy === 3) tagParts.push("order:comment");
     if (filters?.postedFromDays && filters.postedFromDays > 0) {
-      // Not exact but approximate
+      const d = new Date();
+      d.setDate(d.getDate() - filters.postedFromDays);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      tagParts.push(`date:>${yyyy}-${mm}-${dd}`);
     }
+    if (filters?.rating) tagParts.push(`rating:${filters.rating}`);
     if (tagParts.length) params.tags = tagParts.join(" ");
     if (cursor) params.page = `b${cursor}`;
 
@@ -501,17 +622,48 @@ class E621API {
   }
 
   async searchTags(query?: string): Promise<Tag[]> {
-    const params: Record<string, string> = { limit: "40" };
-    if (query) params["search[name_matches]"] = `*${query}*`;
-    const data = await this.get<
-      Array<{ id: number; name: string; post_count: number; category: number }>
-    >("/tags.json", params);
-    return (data ?? []).map((t) => ({
-      id: t.id,
-      value: t.name,
-      count: t.post_count,
-      type: this.mapE621TagCategory(t.category),
-    }));
+    if (!query || query.length < 2) {
+      return this.getTrendingTags();
+    }
+    // Use e621's fast autocomplete endpoint — ranked by post count
+    try {
+      const data = await this.get<
+        Array<{
+          id: number;
+          name: string;
+          post_count: number;
+          category: number;
+          antecedent_name?: string;
+        }>
+      >("/tags/autocomplete.json", {
+        "search[name_matches]": `${query}*`,
+        limit: "20",
+      });
+      return (data ?? []).map((t) => ({
+        id: t.id,
+        value: t.name,
+        count: t.post_count,
+        type: this.mapE621TagCategory(t.category),
+      }));
+    } catch {
+      // Fallback to regular tag search
+      const params: Record<string, string> = { limit: "20" };
+      params["search[name_matches]"] = `*${query}*`;
+      const data = await this.get<
+        Array<{
+          id: number;
+          name: string;
+          post_count: number;
+          category: number;
+        }>
+      >("/tags.json", params);
+      return (data ?? []).map((t) => ({
+        id: t.id,
+        value: t.name,
+        count: t.post_count,
+        type: this.mapE621TagCategory(t.category),
+      }));
+    }
   }
 
   private mapE621TagCategory(cat: number): number {
@@ -530,16 +682,92 @@ class E621API {
     }
   }
 
-  // ── Playlists (not supported on e621 — return empty) ──
-  async getPlaylist(_id: number): Promise<Playlist> {
-    throw new Error("Playlists not available on e621");
+  // ── Pools (mapped to Playlist interface) ──
+  private poolPostIdCache = new Map<number, number[]>();
+
+  async getPlaylist(poolId: number): Promise<Playlist> {
+    const data = await this.get<E621Pool>(`/pools/${poolId}.json`);
+    this.poolPostIdCache.set(poolId, data.post_ids ?? []);
+    const playlist = adaptPool(data);
+    // Fetch the latest post for thumbnail
+    const postIds = data.post_ids ?? [];
+    if (postIds.length > 0) {
+      try {
+        const lastId = postIds[postIds.length - 1];
+        const posts = await this.getPostsBatch([lastId]);
+        if (posts.length > 0) playlist.lastPost = posts[0];
+      } catch {
+        /* thumbnail is optional */
+      }
+    }
+    return playlist;
   }
+
   async searchPlaylists(
-    _take?: number,
-    _cursor?: string | null,
+    take = 20,
+    cursor?: string | null,
   ): Promise<PaginatedResponse<Playlist>> {
-    return { items: [], cursor: null, pagination: 0 };
+    const params: Record<string, string> = {
+      limit: String(Math.min(take, 40)),
+      "search[order]": "updated_at",
+    };
+    if (cursor) params.page = cursor;
+    const data = await this.get<E621Pool[]>("/pools.json", params);
+    const pools = (data ?? []).map(adaptPool);
+    // Batch-fetch the latest post from each pool for thumbnails
+    const thumbIds = (data ?? [])
+      .map((p) => (p.post_ids?.length ? p.post_ids[p.post_ids.length - 1] : 0))
+      .filter((id) => id > 0);
+    if (thumbIds.length > 0) {
+      try {
+        const thumbPosts = await this.getPostsBatch(thumbIds);
+        const postMap = new Map(thumbPosts.map((p) => [p.id, p]));
+        for (let i = 0; i < pools.length; i++) {
+          const pid = (data ?? [])[i]?.post_ids;
+          if (pid?.length) {
+            const lastPost = postMap.get(pid[pid.length - 1]);
+            if (lastPost) pools[i].lastPost = lastPost;
+          }
+        }
+      } catch {
+        /* thumbnails are optional */
+      }
+    }
+    const nextPage =
+      pools.length >= take ? String(Number(cursor || "1") + 1) : null;
+    return { items: pools, cursor: nextPage, pagination: 0 };
   }
+
+  async searchPostsByPlaylist(
+    poolId: number,
+    take = 30,
+    cursor?: string | null,
+  ): Promise<PaginatedResponse<Post>> {
+    // Get post_ids from cache or fetch pool
+    let postIds = this.poolPostIdCache.get(poolId);
+    if (!postIds) {
+      const pool = await this.get<E621Pool>(`/pools/${poolId}.json`);
+      postIds = pool.post_ids ?? [];
+      this.poolPostIdCache.set(poolId, postIds);
+    }
+    // Use cursor as numeric offset
+    const offset = cursor ? Number(cursor) : 0;
+    const slice = postIds.slice(offset, offset + take);
+    if (slice.length === 0) {
+      return { items: [], cursor: null, pagination: 0 };
+    }
+    // Batch-fetch posts and sort in pool order
+    const posts = await this.getPostsBatch(slice);
+    const idOrder = new Map(slice.map((id, i) => [id, i]));
+    posts.sort((a, b) => (idOrder.get(a.id) ?? 0) - (idOrder.get(b.id) ?? 0));
+    const nextOffset = offset + take;
+    return {
+      items: posts,
+      cursor: nextOffset < postIds.length ? String(nextOffset) : null,
+      pagination: 0,
+    };
+  }
+
   async getMyPlaylists(_take?: number): Promise<PaginatedResponse<Playlist>> {
     return { items: [], cursor: null, pagination: 0 };
   }
@@ -593,21 +821,92 @@ class E621API {
   async subscribeToTag(_tagId: number): Promise<void> {}
   async unsubscribeFromTag(_tagId: number): Promise<void> {}
   async getTagBlacklist(): Promise<{ tags: Tag[]; isActive: boolean }> {
-    return { tags: [], isActive: false };
+    if (!this.username) return { tags: [], isActive: false };
+    try {
+      const data = await this.get<E621User>(
+        `/users/${encodeURIComponent(this.username)}.json`,
+      );
+      const rawTags = (data as any).blacklisted_tags ?? "";
+      const tags: Tag[] = String(rawTags)
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((name, idx) => ({
+          id: -(idx + 1),
+          value: name,
+          count: 0,
+          type: 1 as const,
+        }));
+      return { tags, isActive: tags.length > 0 };
+    } catch {
+      return { tags: [], isActive: false };
+    }
   }
 
-  // ── Comments (not supported yet) ──
-  async getPostComments(
-    _postId: number,
-    _take?: number,
-  ): Promise<PaginatedResponse<PostComment>> {
-    return { items: [], cursor: null, pagination: 0 };
+  // ── Comments ──
+  private adaptComment(c: E621Comment): PostComment {
+    return {
+      id: c.id,
+      created: c.created_at,
+      postId: c.post_id,
+      post: null,
+      userId: c.creator_id,
+      user: {
+        id: c.creator_id,
+        displayName: c.creator_name,
+        userName: c.creator_name,
+        avatarModifyDate: null,
+        role: 0,
+        created: "",
+      },
+      content: c.body,
+      likes: Math.max(c.score, 0),
+      dislikes: Math.abs(Math.min(c.score, 0)),
+      childrenCount: 0,
+      parentId: null,
+      parent: null,
+    };
   }
-  async getRecentComments(
+
+  async getPostComments(
+    postId: number,
     _take?: number,
-    _cursor?: string | null,
   ): Promise<PaginatedResponse<PostComment>> {
-    return { items: [], cursor: null, pagination: 0 };
+    try {
+      const data = await this.get<E621Comment[]>("/comments.json", {
+        "search[post_id]": String(postId),
+        "search[order]": "id_desc",
+        limit: "50",
+      });
+      const comments = (data ?? [])
+        .filter((c) => !c.is_hidden)
+        .map((c) => this.adaptComment(c));
+      return { items: comments, cursor: null, pagination: 0 };
+    } catch {
+      return { items: [], cursor: null, pagination: 0 };
+    }
+  }
+
+  async getRecentComments(
+    take = 20,
+    cursor?: string | null,
+  ): Promise<PaginatedResponse<PostComment>> {
+    try {
+      const params: Record<string, string> = {
+        "search[order]": "id_desc",
+        limit: String(Math.min(take, 50)),
+      };
+      if (cursor) params.page = `b${cursor}`;
+      const data = await this.get<E621Comment[]>("/comments.json", params);
+      const comments = (data ?? [])
+        .filter((c) => !c.is_hidden)
+        .map((c) => this.adaptComment(c));
+      const lastId =
+        comments.length > 0 ? String(comments[comments.length - 1].id) : null;
+      return { items: comments, cursor: lastId, pagination: 0 };
+    } catch {
+      return { items: [], cursor: null, pagination: 0 };
+    }
   }
 
   // ── User ──
@@ -635,9 +934,10 @@ class E621API {
       // Fetch user's favorites
       const favs = await this.searchLikedPosts(userId, 80);
       if (favs.items.length === 0) {
-        // Fallback: popular posts
-        const popular = await this.searchPosts(take, null, { sortBy: 1 });
-        return { items: popular.items, topTags: [] };
+        // Fallback: popular posts (with 100+ favs filter)
+        const popular = await this.searchPosts(take * 2, null, { sortBy: 1 });
+        const filtered = popular.items.filter((p) => (p.likes ?? 0) >= 100);
+        return { items: filtered.slice(0, take), topTags: [] };
       }
 
       // Build interest profile from favorites
@@ -662,8 +962,9 @@ class E621API {
         .map(([v]) => v);
 
       if (rankedTags.length === 0) {
-        const popular = await this.searchPosts(take, null, { sortBy: 1 });
-        return { items: popular.items, topTags: [] };
+        const popular = await this.searchPosts(take * 2, null, { sortBy: 1 });
+        const filtered = popular.items.filter((p) => (p.likes ?? 0) >= 100);
+        return { items: filtered.slice(0, take), topTags: [] };
       }
 
       // Search with top tags (e621 supports multi-tag search)
@@ -674,27 +975,32 @@ class E621API {
 
       const [poolA, poolB, poolC] = await Promise.all([
         coreTags.length
-          ? this.searchPosts(take, null, { includeTags: coreTags, sortBy: 1 })
+          ? this.searchPosts(take * 2, null, {
+              includeTags: coreTags,
+              sortBy: 1,
+            })
               .then((r) => r.items)
               .catch(() => [] as Post[])
           : Promise.resolve([] as Post[]),
         discTags.length
-          ? this.searchPosts(take, null, {
+          ? this.searchPosts(take * 2, null, {
               includeTags: [discTags[0]],
               sortBy: 1,
             })
               .then((r) => r.items)
               .catch(() => [] as Post[])
           : Promise.resolve([] as Post[]),
-        this.searchPosts(Math.ceil(take * 0.4), null, { sortBy: 1 })
+        this.searchPosts(Math.ceil(take * 0.8), null, { sortBy: 1 })
           .then((r) => r.items)
           .catch(() => [] as Post[]),
       ]);
 
-      // Merge and deduplicate
+      // Merge, deduplicate, and filter by quality (100+ favs)
+      const MIN_FAVS = 100;
       const allPosts = [...poolA, ...poolB, ...poolC]
         .filter((p) => !seenIds.has(p.id))
-        .filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i);
+        .filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i)
+        .filter((p) => (p.likes ?? 0) >= MIN_FAVS);
 
       // Shuffle lightly
       for (let i = allPosts.length - 1; i > 0; i--) {
@@ -707,8 +1013,9 @@ class E621API {
         topTags: rankedTags.slice(0, 5),
       };
     } catch {
-      const popular = await this.searchPosts(take, null, { sortBy: 1 });
-      return { items: popular.items, topTags: [] };
+      const popular = await this.searchPosts(take * 2, null, { sortBy: 1 });
+      const filtered = popular.items.filter((p) => (p.likes ?? 0) >= 100);
+      return { items: filtered.slice(0, take), topTags: [] };
     }
   }
 

@@ -83,20 +83,64 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (isE621) {
         // e621: username + API key stored separately
-        const storedUser = await storage.getItem("e621_user");
         const storedUsername = await storage.getItem("e621_username");
         const storedKey = await storage.getItem("e621_apikey");
-        if (storedUsername && storedKey && storedUser) {
-          const parsed = JSON.parse(storedUser) as UserProfile;
-          e621Api.setAuth(storedUsername, storedKey, parsed);
-          setToken(btoa(`${storedUsername}:${storedKey}`));
-          setUser(parsed);
-          // Refresh profile in background
-          try {
-            const fresh = await e621Api.getMe();
-            setUser(fresh);
-            await storage.setItem("e621_user", JSON.stringify(fresh));
-          } catch {}
+        if (storedUsername && storedKey) {
+          const token = btoa(`${storedUsername}:${storedKey}`);
+          e621Api.setAuth(storedUsername, storedKey);
+
+          // Try to restore user from cache for instant display
+          let cachedUser: UserProfile | null = null;
+          const storedUser = await storage.getItem("e621_user");
+          if (storedUser) {
+            try {
+              cachedUser = JSON.parse(storedUser) as UserProfile;
+              e621Api.setAuth(storedUsername, storedKey, cachedUser);
+            } catch (parseErr) {
+              console.warn("[AuthContext] e621 cached user corrupt:", parseErr);
+            }
+          }
+
+          if (cachedUser) {
+            // Show cached profile immediately, refresh in true background
+            setToken(token);
+            setUser(cachedUser);
+            e621Api
+              .getMe()
+              .then(async (fresh) => {
+                setUser(fresh);
+                await storage.setItem("e621_user", JSON.stringify(fresh));
+              })
+              .catch((err) => {
+                console.warn(
+                  "[AuthContext] e621 background refresh failed:",
+                  err,
+                );
+              });
+          } else {
+            // No cache — must fetch synchronously to get anything to show
+            console.log(
+              "[AuthContext] e621 no cached user, fetching fresh profile",
+            );
+            setToken(token); // Set token now so isLoggedIn is true during fetch
+            try {
+              const fresh = await e621Api.getMe();
+              e621Api.setAuth(storedUsername, storedKey, fresh);
+              setUser(fresh);
+              await storage.setItem("e621_user", JSON.stringify(fresh));
+            } catch (err) {
+              console.warn(
+                "[AuthContext] e621 fresh profile fetch failed:",
+                err,
+              );
+              // Credentials likely invalid — clear them
+              setToken(null);
+              setUser(null);
+              await storage.removeItem("e621_username");
+              await storage.removeItem("e621_apikey");
+              await storage.removeItem("e621_user");
+            }
+          }
         } else {
           setToken(null);
           setUser(null);

@@ -8,23 +8,33 @@ import { Colors, Spacing } from "../../constants/theme";
 import { useAuth } from "../../contexts/AuthContext";
 import { useFeedCount } from "../../contexts/FeedCountContext";
 import { useSettings } from "../../contexts/SettingsContext";
+import { useSite } from "../../contexts/SiteContext";
 import { useAppTheme } from "../../contexts/ThemeContext";
 
 function HeaderRight() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, isLoggedIn } = useAuth();
+  const { isE621 } = useSite();
   const { count: feedCount } = useFeedCount();
   const { colors } = useAppTheme();
 
   const isFeedActive = pathname === "/feed";
   const isProfileActive = pathname === "/profile";
-  const avatarUrl = user ? getAvatarUrl(user.id, user.avatarModifyDate) : "";
+  // e621 users don't have R34V CDN avatars — skip to avoid broken URL
+  const avatarUrl = user
+    ? isE621
+      ? user.avatarModifyDate || ""
+      : getAvatarUrl(user.id, user.avatarModifyDate)
+    : "";
 
   return (
     <View style={headerStyles.row}>
       <Pressable
-        style={[headerStyles.iconBtn, isFeedActive && { backgroundColor: colors.bgTertiary }]}
+        style={[
+          headerStyles.iconBtn,
+          isFeedActive && { backgroundColor: colors.bgTertiary },
+        ]}
         onPress={() => router.push("/feed")}
       >
         <Ionicons
@@ -42,7 +52,10 @@ function HeaderRight() {
       </Pressable>
 
       <Pressable
-        style={[headerStyles.avatarBtn, isProfileActive && { borderColor: colors.accent }]}
+        style={[
+          headerStyles.avatarBtn,
+          isProfileActive && { borderColor: colors.accent },
+        ]}
         onPress={() => router.push("/profile")}
       >
         {isLoggedIn && avatarUrl ? (
@@ -53,7 +66,12 @@ function HeaderRight() {
             transition={200}
           />
         ) : (
-          <View style={[headerStyles.avatarPlaceholder, { backgroundColor: colors.bgTertiary }]}>
+          <View
+            style={[
+              headerStyles.avatarPlaceholder,
+              { backgroundColor: colors.bgTertiary },
+            ]}
+          >
             <Ionicons name="person" size={18} color={colors.textSecondary} />
           </View>
         )}
@@ -141,13 +159,14 @@ export default function TabLayout() {
         tabBarItemStyle: {
           flex: 1,
         },
-        headerStyle: { 
+        headerStyle: {
           backgroundColor: colors.bgSecondary,
-          display: (isForYouActive && isTiktokMode) ? "none" : "flex",
+          display: isForYouActive && isTiktokMode ? "none" : "flex",
         },
         headerTintColor: colors.text,
         headerTitleStyle: { fontWeight: "700" },
-        headerRight: () => (isForYouActive && isTiktokMode) ? null : <HeaderRight />,
+        headerRight: () =>
+          isForYouActive && isTiktokMode ? null : <HeaderRight />,
       }}
     >
       <Tabs.Screen
